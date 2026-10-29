@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 from resume_tailor.agent import AgentNotConfigured, ResumeTailoringAgent
 
-DEFAULT_RESUME_PATH = Path("documents/resume.txt")
-DEFAULT_JOB_DESCRIPTION_PATH = Path("documents/job_description.txt")
+DEFAULT_RESUME_PATH = Path("private_data/resume.txt")
+DEFAULT_JOB_DESCRIPTION_PATH = Path("private_data/job_description.txt")
 
 
 def _read_document(

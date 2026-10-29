@@ -13,8 +13,12 @@ Notable project changes are recorded here, with the newest entries first.
 
 ### Changed
 
+- Move the CLI's default resume and job-description paths to Git-ignored `private_data/`.
+- Clarify local-first distribution and add OpenRouter and DeepSeek endpoint scenarios to the implementation plan.
+- Revise the resume-tailoring plan for a CLI-first workflow, eventual TypeScript frontend, and production reliability and observability.
 - Remove the generated TypeScript/Vite frontend and use the CLI as the primary interface.
 - Remove local pytest, Ruff, and Python bytecode caches while preserving the virtual environment, secrets file, and project documents.
+- Prohibit AI co-author attribution in commit messages through project instructions.
 
 ### Notes
 

@@ -219,6 +219,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Local documents may contain personal information
+# Private inputs, outputs, and runtime data
+private_data/
+
+# Existing local documents may still contain personal information
 /documents/*
 !/documents/README.md

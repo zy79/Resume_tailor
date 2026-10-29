@@ -23,14 +23,18 @@ cp .env.example .env
 
 The provider adapters are not connected yet, so these values are available for the integration but are not used to generate or judge resumes yet.
 
-## Documents
+## Documents and private data
 
-Put UTF-8 resume and job-description files in `documents/`. The CLI defaults to:
+Use `documents/` for general project documents. Put UTF-8 resumes and job descriptions
+in the separate `private_data/` directory, which is ignored by Git. From the repository
+root, create it with `mkdir -p -m 700 private_data`; the CLI defaults to:
 
-- `documents/resume.txt`
-- `documents/job_description.txt`
+- `private_data/resume.txt`
+- `private_data/job_description.txt`
 
-The directory is ignored by Git to avoid committing personal documents; its README stays tracked.
+Existing files in `documents/` are not moved automatically and remain ignored by Git
+because they may contain personal information. If needed, move your own files to
+`private_data/` before running the CLI.
 
 ## Run
 
@@ -43,8 +47,10 @@ resume-tailor
 It prompts for each document path, using the defaults above when you press Enter. Paths can also be supplied directly:
 
 ```bash
-resume-tailor --resume documents/resume.txt --job-description documents/job_description.txt --output documents/tailored_resume.txt
+resume-tailor --resume private_data/resume.txt --job-description private_data/job_description.txt --output private_data/tailored_resume.txt
 ```
+
+Without `--output`, the tailored resume is printed to the terminal.
 
 You can alternatively run it as a module with `python -m resume_tailor`.
 

@@ -1,5 +1,8 @@
 # Documents
 
-Place UTF-8 resume and job-description files in this directory. The CLI looks for `resume.txt` and `job_description.txt` by default, or accepts alternate paths when prompted.
+Use this directory for general project documents, not personal resumes, job descriptions,
+or generated resumes. Store those in the separate Git-ignored `private_data/` directory.
+The CLI defaults to `private_data/resume.txt` and `private_data/job_description.txt`.
 
-Files in this directory are ignored by Git because they may contain personal information.
+Existing files in `documents/` remain ignored by Git because they may contain personal
+information. They are not moved automatically.

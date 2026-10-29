@@ -221,7 +221,3 @@ __marimo__/
 
 # Private inputs, outputs, and runtime data
 private_data/
-
-# Existing local documents may still contain personal information
-/documents/*
-!/documents/README.md

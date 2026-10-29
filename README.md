@@ -32,9 +32,8 @@ root, create it with `mkdir -p -m 700 private_data`; the CLI defaults to:
 - `private_data/resume.txt`
 - `private_data/job_description.txt`
 
-Existing files in `documents/` are not moved automatically and remain ignored by Git
-because they may contain personal information. If needed, move your own files to
-`private_data/` before running the CLI.
+Files in `documents/` are public project materials and may be tracked by Git. Do not
+store personal documents there.
 
 ## Run
 

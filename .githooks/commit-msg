@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+    printf '%s\n' 'commit-msg: expected a commit-message file.' >&2
+    exit 2
+fi
+
+message_file=$1
+if ! trailers=$(git interpret-trailers --parse "$message_file"); then
+    printf '%s\n' 'commit-msg: failed to parse commit-message trailers.' >&2
+    exit 2
+fi
+
+if ! command -v grep >/dev/null 2>&1; then
+    printf '%s\n' 'commit-msg: grep is required to validate commit-message trailers.' >&2
+    exit 2
+fi
+
+if printf '%s\n' "$trailers" | grep -Eiq '^[[:space:]]*Co-authored-by:[[:space:]].*Copilot'; then
+    printf '%s\n' 'Commit rejected: Copilot co-author trailers are not allowed.' >&2
+    exit 1
+else
+    status=$?
+    if [ "$status" -ne 1 ]; then
+        printf '%s\n' 'commit-msg: failed to inspect commit-message trailers.' >&2
+        exit 2
+    fi
+fi

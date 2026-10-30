@@ -6,12 +6,24 @@ Notable project changes are recorded here, with the newest entries first.
 
 ### Fixed
 
+- List all uncovered JD requirements in one priority-ordered supplement-or-skip summary, with at most one optional evidence question and no per-requirement follow-ups.
+- Publish Prompt-route candidates automatically after required checks, without per-write or final publish approval prompts; preserve explicit review-waiver and factuality gates.
+- Streamline Prompt-route interaction by defaulting optional preferences and reporting generated `private_data/` paths without approval prompts.
+- Add a bounded Linux/GNU `find` fallback for Git-ignored input discovery, avoiding unnecessary resume-path questions without adding directory scanning to the CLI.
+- Make Prompt-route filename matching deterministic and distinguish incomplete Git-ignored `private_data/` listings from genuinely missing inputs.
+- Treat the local `private_data/` workspace as the active user's data without repeated read-permission prompts, and prohibit cross-user access with a per-user isolation requirement for future multi-user support.
+- Avoid redundant path questions for explicit filename-only searches and use exact-depth host-native discovery instead of unsafe directory views.
+- Replace repeated per-item high-risk confirmation with one source-level approval for new or changed resumes, and reuse unchanged saved profiles.
+- Infer the target company and role from the selected JD and choose the resume language from the source documents without asking the user to restate them.
+- Match resume evidence quotes across consecutive source blocks and normalize PDF line-break hyphenation.
 - Close review gaps in review-mode gates, source and metric checks, phone redaction, and private CLI output; make publishing resumable and same-candidate retries idempotent.
 - Validate Jinja in DOCX headers and footers, restrict runtime filters and globals, and package `PROMPT.md` as a wheel resource.
-- Limit README batch confirmation to ordinary facts and require individual confirmation for high-risk facts.
 
 ### Added
 
+- Add a repository-managed commit hook that rejects Copilot co-author trailers.
+- Save content-free per-step diagnostics locally and keep versioned resume profiles separate from job artifacts.
+- Allow consented one-level filename discovery in a provided folder, automatically using unique resume and JD matches and asking when ambiguous.
 - Add automatic LibreOffice discovery for standard Windows and macOS installation directories, enabling headless PDF conversion without requiring manual PATH configuration.
 - Add 3 popular ATS-friendly DOCX resume templates (`classic`, `modern`, `compact`) to `src/resume_tailor/templates_builtin/` and `documents/templates/`, with built-in template selection support in `render --template <name>`.
 - Add comprehensive English user guide for the Phase 1 Prompt-first local workflow (`documents/prompt_route_user_guide.md`), detailing the end-to-end lifecycle, command reference, safety boundaries, and troubleshooting.
@@ -26,6 +38,8 @@ Notable project changes are recorded here, with the newest entries first.
 
 ### Changed
 
+- Require an original DOCX and actual template reuse for layout-preservation requests; disclose re-layout for PDF/TXT inputs.
+- Clarify the default `private_data/` input location, profile-first lookup, and same-folder resume/JD discovery.
 - Document supported resume and job-description file formats in the README, including text-layer PDF requirements and the paste option for job descriptions.
 - Update template and page-count guidance in `README.md`, `PROMPT.md`, and `documents/prompt_route_user_guide.md` so that the assistant defaults to preserving the user's existing resume layout and page count rather than restricting selection to the three built-in templates.
 - Streamline the user workflow in `README.md` with a concise 4-step Quick Start showing how job seekers interact with their coding assistant without manually running CLI commands, and clarify the technical reference scope in `documents/prompt_route_user_guide.md`.

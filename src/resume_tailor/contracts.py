@@ -10,6 +10,9 @@ Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 PartialDate = Annotated[str, StringConstraints(pattern=r"^\d{4}(-\d{2})?$")]
 PartialEndDate = Annotated[str, StringConstraints(pattern=r"^(\d{4}(-\d{2})?|Present)$")]
 YearString = Annotated[str, StringConstraints(pattern=r"^\d{4}$")]
+ProfileName = Annotated[
+    str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+]
 
 
 class Contract(BaseModel):
@@ -42,6 +45,25 @@ class CliResult(Contract):
     artifacts: list[ArtifactInfo] = Field(default_factory=list)
     skipped_checks: list[SkippedCheck] = Field(default_factory=list)
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class DiagnosticArtifact(Contract):
+    role: str
+    sha256: Sha256
+
+
+class DiagnosticRecord(Contract):
+    schema_version: Literal[1] = 1
+    run_id: ProfileName
+    step: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
+    command: str
+    status: Literal["ok", "blocked", "degraded", "error"]
+    exit_code: int
+    created_at: AwareDatetime
+    issue_codes: list[str] = Field(default_factory=list)
+    artifacts: list[DiagnosticArtifact] = Field(default_factory=list)
+    skipped_checks: list[str] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
 
 
 class SourcePosition(Contract):
@@ -215,13 +237,23 @@ class UserFactBase(Contract):
 
 
 class FactBaseSnapshot(Contract):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     snapshot_id: str
     snapshot_sha256: Sha256
     parent_snapshot_sha256: Sha256 | None = None
     ledger_sha256: Sha256
     created_at: AwareDatetime
+    profile_name: ProfileName | None = None
+    resume_source_sha256: Sha256 | None = None
     fact_base: UserFactBase
+
+    @model_validator(mode="after")
+    def validate_profile_metadata(self) -> Self:
+        if (self.profile_name is None) != (self.resume_source_sha256 is None):
+            raise ValueError("profile name and resume source hash must be supplied together")
+        if self.schema_version == 1 and self.profile_name is not None:
+            raise ValueError("profile metadata requires snapshot schema version 2")
+        return self
 
 
 class JobKeyword(Contract):

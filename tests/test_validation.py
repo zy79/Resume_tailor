@@ -135,6 +135,29 @@ def test_unsupported_jd_term_is_blocked(tmp_path: Path) -> None:
     )
 
 
+def test_uncovered_must_have_does_not_block_candidate(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    payload = _payload(tmp_path / "payload.json", snapshot, "Built a reliable service.")
+    requirements = JobRequirements(
+        jd_text_sha256="0" * 64,
+        company_name="Synthetic Systems",
+        role_title="Engineer",
+        keywords=[JobKeyword(term="Kubernetes", category="skill", must_have=True)],
+    )
+    payload.job_requirements_sha256 = sha256_json(requirements)
+    _write_json(tmp_path / "payload.json", payload)
+    _write_json(tmp_path / "requirements.json", requirements)
+
+    report = check_resume_facts(
+        tmp_path / "snapshot.json",
+        tmp_path / "payload.json",
+        requirements_path=tmp_path / "requirements.json",
+    )
+
+    assert all(check.passed for check in report.checks)
+    assert report.approval_conditions["deterministic_checks_passed"] is True
+
+
 def test_unsupported_derived_number_is_blocked(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path / "snapshot.json")
     _payload(tmp_path / "payload.json", snapshot, "Reduced latency by 50%.")

@@ -1,4 +1,5 @@
 import json
+import stat
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,99 @@ def test_extract_text_emits_json_without_source_text(tmp_path: Path, capsys) -> 
     assert "reader@example.test" not in captured.out
     assert "reader@example.test" not in captured.err
     assert output.exists()
+
+
+def test_diagnostics_record_cli_step_without_document_text(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    probe = "Synthetic Resume Probe reader@example.test"
+    source = tmp_path / "source.txt"
+    output = tmp_path / "source.json"
+    diagnostics = Path("private_data/tmp/run_123/extract-resume.json")
+    source.write_text(probe, encoding="utf-8")
+
+    result = cli.main(
+        [
+            "extract-text",
+            str(source),
+            "--out",
+            str(output),
+            "--diagnostics-out",
+            str(diagnostics),
+        ]
+    )
+    captured = capsys.readouterr()
+    record_path = tmp_path / diagnostics
+    record_text = record_path.read_text(encoding="utf-8")
+    record = json.loads(record_text)
+
+    assert result == 0
+    assert record["run_id"] == "run_123"
+    assert record["step"] == "extract-resume"
+    assert record["command"] == "extract-text"
+    assert record["status"] == "ok"
+    assert record["exit_code"] == 0
+    assert record["artifacts"][0]["role"] == "privacy_sidecar"
+    assert probe not in record_text
+    assert probe not in captured.out
+    assert probe not in captured.err
+    assert stat.S_IMODE(record_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(record_path.parent.stat().st_mode) == 0o700
+
+
+def test_diagnostics_record_failed_cli_step_without_document_text(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    probe = "Synthetic Resume Probe"
+    diagnostics = Path("private_data/tmp/run_456/extract-resume.json")
+
+    result = cli.main(
+        [
+            "extract-text",
+            str(tmp_path / f"{probe}.txt"),
+            "--diagnostics-out",
+            str(diagnostics),
+        ]
+    )
+    captured = capsys.readouterr()
+    record_path = tmp_path / diagnostics
+    record_text = record_path.read_text(encoding="utf-8")
+    record = json.loads(record_text)
+
+    assert result == 1
+    assert record["run_id"] == "run_456"
+    assert record["step"] == "extract-resume"
+    assert record["status"] == "error"
+    assert record["exit_code"] == 1
+    assert record["issue_codes"] == ["invalid_input"]
+    assert probe not in record_text
+    assert probe not in captured.err
+
+
+def test_diagnostics_path_is_restricted_before_command_runs(
+    tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "source.txt"
+    output = tmp_path / "source.json"
+    source.write_text("Synthetic input.", encoding="utf-8")
+
+    result = cli.main(
+        [
+            "extract-text",
+            str(source),
+            "--out",
+            str(output),
+            "--diagnostics-out",
+            str(tmp_path / "outside.json"),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 1
+    assert "private_data/tmp" in captured.err
+    assert not output.exists()
 
 
 def test_gate_block_is_json_and_uses_exit_code_3(tmp_path: Path, capsys) -> None:

@@ -39,6 +39,7 @@ from resume_tailor.storage import (
     ProtocolError,
     ensure_private_directory,
     json_bytes,
+    profile_snapshot_path,
     read_model,
     resolve_input_path,
     write_exclusive,
@@ -65,7 +66,35 @@ class IdentityFile(Contract):
 
 
 def _normalize_whitespace(value: str) -> str:
+    value = re.sub(r"(?<=\w)-[ \t]*\r?\n[ \t]*(?=\w)", "-", value)
     return " ".join(value.split())
+
+
+def _quote_matches_source_blocks(
+    quote: str,
+    source_block_ids: list[str],
+    blocks_by_id: dict[str, str],
+    source_block_order: dict[str, int],
+) -> bool:
+    selected = [
+        (block_id, blocks_by_id[block_id])
+        for block_id in source_block_ids
+        if block_id in blocks_by_id
+    ]
+    if any(quote in _normalize_whitespace(text) for _, text in selected):
+        return True
+    if len(selected) != len(source_block_ids):
+        return False
+
+    block_indexes = [source_block_order[block_id] for block_id, _ in selected]
+    if len(block_indexes) < 2 or any(
+        current != previous + 1
+        for previous, current in zip(block_indexes, block_indexes[1:], strict=False)
+    ):
+        return False
+
+    combined_source = "\n".join(text for _, text in selected)
+    return quote in _normalize_whitespace(combined_source)
 
 
 def _extract_blocks(
@@ -308,12 +337,14 @@ def _escape_ledger_text(value: str) -> str:
 
 def _ledger_text(candidates: FactCandidates) -> str:
     lines = [
-        "# Fact confirmation ledger",
+        "# Resume fact confirmation ledger",
         "",
         f"Candidate version: `{candidates.version}`",
         "",
-        "Confirm only statements that match the original evidence.",
-        "High-risk entries need individual review.",
+        "One source-level confirmation covers all facts extracted from the user-provided resume.",
+        "High-risk labels are informational; ask individually only about unclear or "
+        "conflicting items.",
+        "A clear user selection is final; do not request a second typed confirmation.",
         "",
     ]
     for object_type, object_id, item, label, risk in _candidate_items(candidates):
@@ -322,7 +353,7 @@ def _ledger_text(candidates: FactCandidates) -> str:
             detail = item.verified_statement
             lines.extend(
                 [
-                    f"- [ ] `{object_type}:{object_id}` ({label}; sha256 `{item_hash}`)"
+                    f"- `{object_type}:{object_id}` ({label}; sha256 `{item_hash}`)"
                     + (" **HIGH RISK: metric/responsibility**" if item.verified_metrics else ""),
                     f"  - Raw source: {_escape_ledger_text(item.raw_source_text)}",
                     f"  - Normalized statement: {_escape_ledger_text(detail)}",
@@ -338,7 +369,7 @@ def _ledger_text(candidates: FactCandidates) -> str:
         elif isinstance(item, VerifiedSkill):
             lines.extend(
                 [
-                    f"- [ ] `{object_type}:{object_id}` ({label}; HIGH RISK; sha256 `{item_hash}`)",
+                    f"- `{object_type}:{object_id}` ({label}; HIGH RISK; sha256 `{item_hash}`)",
                     f"  - Raw source: {_escape_ledger_text(item.raw_source_text)}",
                     f"  - Skill: {_escape_ledger_text(item.skill_name)}",
                 ]
@@ -346,7 +377,7 @@ def _ledger_text(candidates: FactCandidates) -> str:
         else:
             summary = json.dumps(item.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
             lines.append(
-                f"- [ ] `{object_type}:{object_id}` ({label}; sha256 `{item_hash}`)"
+                f"- `{object_type}:{object_id}` ({label}; sha256 `{item_hash}`)"
                 + (" **HIGH RISK**" if risk else "")
                 + f" — {_escape_ledger_text(summary)}"
             )
@@ -369,6 +400,9 @@ def validate_fact_candidates(
     source = read_model(source_path, SourceText)
     candidates = read_model(candidates_path, FactCandidates)
     blocks_by_id = {block.block_id: block.text for block in source.blocks}
+    source_block_order = {
+        block.block_id: index for index, block in enumerate(source.blocks)
+    }
     seen: set[tuple[str, str]] = set()
     issues: list[str] = []
     referenced_source_block_ids: set[str] = set()
@@ -396,8 +430,11 @@ def validate_fact_candidates(
                 quote = _normalize_whitespace(item.raw_source_text)
                 if not quote:
                     issues.append("missing_source_quote")
-                elif selected and not any(
-                    quote in _normalize_whitespace(text) for text in selected
+                elif selected and not _quote_matches_source_blocks(
+                    quote,
+                    item.source_block_ids,
+                    blocks_by_id,
+                    source_block_order,
                 ):
                     issues.append("source_quote_not_found")
             elif not item.raw_source_text.strip():
@@ -472,14 +509,36 @@ def _parent_fact_base(path: str | Path | None) -> FactBaseSnapshot | None:
 def build_fact_snapshot(
     candidates_path: str | Path,
     confirmations_path: str | Path,
-    out_path: str | Path,
+    out_path: str | Path | None,
     *,
     identity_path: str | Path | None = None,
     parent_path: str | Path | None = None,
+    profile_name: str | None = None,
+    profile_source_path: str | Path | None = None,
 ) -> FactBaseSnapshot:
+    profile_mode = profile_name is not None or profile_source_path is not None
+    if profile_mode and (
+        profile_name is None or profile_source_path is None or out_path is not None
+    ):
+        raise ProtocolError(
+            "Profile snapshots require a name and source, without --out.",
+            code="profile_invalid",
+        )
+    if not profile_mode and out_path is None:
+        raise ProtocolError("An explicit snapshot output path is required.")
+
     candidates = read_model(candidates_path, FactCandidates)
     confirmations = read_model(confirmations_path, ConfirmationRecords)
+    profile_source = (
+        read_model(profile_source_path, SourceText) if profile_source_path is not None else None
+    )
     parent = _parent_fact_base(parent_path)
+    if profile_name is not None and parent is not None and parent.profile_name != profile_name:
+        raise ProtocolError(
+            "Parent snapshot does not match the selected profile.",
+            code="profile_mismatch",
+            blocked=True,
+        )
     for _, _, item, _, _ in _candidate_items(candidates):
         if getattr(item, "user_confirmed", False):
             raise ProtocolError(
@@ -617,7 +676,7 @@ def build_fact_snapshot(
         identity = Identity(user_confirmed=True, content_sha256=content_sha256(Identity()))
 
     fact_base = UserFactBase(
-        user_id=candidates.user_id,
+        user_id=profile_name or candidates.user_id,
         version=(parent.fact_base.version + 1) if parent else candidates.version,
         identity=identity,
         education=list(education.values()),
@@ -632,7 +691,20 @@ def build_fact_snapshot(
         parent_snapshot_sha256=parent.snapshot_sha256 if parent else None,
         ledger_sha256=confirmations.ledger_sha256,
         created_at=datetime.now(UTC),
+        profile_name=profile_name,
+        resume_source_sha256=profile_source.source_sha256 if profile_source else None,
         fact_base=fact_base,
     )
-    write_json_exclusive(out_path, snapshot)
+    output_path = (
+        profile_snapshot_path(
+            profile_name,
+            snapshot.fact_base.version,
+            snapshot.resume_source_sha256,
+        )
+        if profile_name is not None and snapshot.resume_source_sha256 is not None
+        else Path(out_path) if out_path is not None else None
+    )
+    if output_path is None:
+        raise ProtocolError("Snapshot output could not be determined.", code="invalid_input")
+    write_json_exclusive(output_path, snapshot)
     return snapshot

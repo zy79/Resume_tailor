@@ -58,29 +58,31 @@
 
 ### 1.5 Prompt 优先与 TypeScript 工作台双路线
 
-默认产品入口是可复制粘贴的根目录 `PROMPT.md`，而不是 CLI 问答界面。参考 [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv) 的 README/PROMPT.md 模式：用户在有文件与终端权限的编码 Agent 中打开项目并粘贴一段入口 Prompt；Agent 复用项目已有工具，逐步询问偏好和缺失信息，说明即将执行的操作，并在读取个人文件、生成或覆盖产物前等待用户确认。本项目只借鉴交互模式，不假定所有编码 Agent 的工具能力完全相同，也不复用其领域逻辑。
+默认产品入口是可复制粘贴的根目录 `PROMPT.md`，而不是 CLI 问答界面。参考 [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv) 的 README/PROMPT.md 模式：用户在有文件与终端权限的编码 Agent 中打开项目并粘贴一段入口 Prompt；Agent 复用项目已有工具，在首次读取前披露宿主的数据处理方式，但不再逐次询问是否可读取当前用户自己的文件。当前单用户本机模式把仓库的 `private_data/` 视为当前用户的数据目录，用户请求简历定制即足以授权对相关文件进行有界发现和读取；Agent 从当前简历或档案识别用户，只读取完成任务所需文件，不递归扫描。未来多用户模式必须把每个用户的全部个人数据放在 `private_data/users/{stable_user_id}/`，只访问当前用户目录，绝不读取其他用户数据。Agent 再从 JD 自动提取公司和岗位、从两份材料自动确定输出语言；可选偏好采用默认值（定位 `balanced`），只对文件歧义或确实缺少的必要信息澄清。未被简历支持的 JD 要求不是完成门槛；事实快照确认后、起草前，一次性列出所有未覆盖或部分覆盖的 requirement（must-have 与 nice-to-have），按优先级建议“有真实证据时补充”或“略过”。只对建议补充的项目给出 2–3 个条件式证据建议，最多集中询问一次；不逐项追问，未回答的项目省略并继续。派生文件可在 `private_data/` 下直接写入，无需逐次许可；原始简历和 JD 只读，并在完成时报告写入路径。门禁全部通过后自动发布，不再要求逐次发布批准。本项目只借鉴交互模式，不假定所有编码 Agent 的工具能力完全相同，也不复用其领域逻辑。
 
-Prompt 路线由宿主编码 Agent 承担对话与生成，不通过本项目的 `MAIN_LLM_*` 或 `JUDGE_LLM_*` 直接调用模型。它应支持“选择/粘贴一份简历和一份 JD → 逐项确认事实与风格 → 生成候选 → 本机确定性检查与人工复核 → 用户批准后导出”的基本闭环；不要求启动 FastAPI、PostgreSQL 或 TypeScript 前端。用户订阅的模型额度、服务条款和数据处理政策适用；不需要独立 API Key 不代表内容不会发送到宿主 Agent 的云端服务。
+Prompt 路线由宿主编码 Agent 承担对话与生成，不通过本项目的 `MAIN_LLM_*` 或 `JUDGE_LLM_*` 直接调用模型。它应支持“先在当前用户的数据目录查找本地资料档案，必要时提供一份新/已更新简历和一份 JD → 对新简历的一次来源级选择（可选偏好采用默认值）→ 生成候选（不要求覆盖所有 JD 要求）→ 本机确定性检查与人工复核 → 门禁通过后自动发布”的基本闭环；访问当前用户的相关文件和在 `private_data/` 中写入派生文件均无需逐次请求许可，原始简历和 JD 保持只读并在完成时报告路径；用户简历中明确陈述的来源事实不逐项要求高风险确认，同一来源哈希的已保存档案不重复确认。Prompt 路线不要求最终发布批准，但未完成或不可用的语义审查仍需用户明确豁免；TypeScript 工作台保留显式审批。不要求启动 FastAPI、PostgreSQL 或 TypeScript 前端。用户订阅的模型额度、服务条款和数据处理政策适用；不需要独立 API Key 不代表内容不会发送到宿主 Agent 的云端服务。
 
 | 功能 | Prompt + 订阅 Agent 路线 | TypeScript 本机工作台路线 |
 | :--- | :--- | :--- |
-| 核心简历定制 | 支持单份简历和单个目标岗位；高风险事实（指标、职责主导权、技能、日期、雇主）由 Agent 每次只问一个问题并逐项确认，常规条目通过代码渲染的确认账本批量确认；事实不清时暂停，不覆盖原文件 | 支持结构化录入、编辑、Diff、恢复和候选版本管理 |
+| 核心简历定制 | 支持单份简历和单个目标岗位；对首次或已变更简历，用户一次选择即可批准来源中明确陈述的事实；不对这些来源事实逐项追问高风险确认，也不要求第二次键入 `confirm`；不清晰或矛盾的来源、用户编辑和模型建议仍须处理；同一来源哈希的资料档案不重复确认 | 支持结构化录入、编辑、Diff、恢复和候选版本管理 |
 | 模型与审查 | 同一宿主 Agent 负责生成与 Judge，不要求独立 API Key；审查模式、状态与审批条件以 5.5 为准 | 应用直连模型需独立配置 `MAIN_LLM_*`；独立配置的语义审查需另行配置 `JUDGE_LLM_*` |
 | 申请追踪 | 可选地在用户确认后，为当前岗位维护状态、更新时间和下一步的轻量本地便笺 | 完整看板、跨岗位列表/筛选、状态历史、面试轮次与可追溯问题汇总 |
 | 面试资料 | 可在当前岗位的便笺中记录用户提供的单轮笔记；不保证跨岗位检索或聚合 | 按岗位和轮次管理笔记与实际问题，支持全部问题或按 Title 汇总并回溯来源 |
-| 输入与数据管理 | 用户粘贴内容或明确指定文件；没有批量上传、自动扫描目录或图形化预览 | 支持本机表单、文件预览、批量浏览与更丰富的资料管理 |
+| 输入与数据管理 | 当前单用户模式默认在当前用户的 `private_data/` 中有界查找资料档案和任务所需文件，不逐文件询问读取权限；文件或档案有歧义时询问选择。未来多用户模式把每个用户的全部数据隔离在 `private_data/users/{stable_user_id}/`，绝不跨用户访问；不递归。没有批量上传或图形化预览 | 支持本机表单、文件预览、批量浏览与更丰富的资料管理 |
 
 完整申请追踪、跨岗位搜索/聚合、提醒、可视化时间线和多轮面试资料管理归属 TypeScript UI；Prompt 路线只提供可选的单岗位便笺，不将其描述为等价看板。两条路线共用事实契约、确定性校验、文件存储和渲染规则，但不共享宿主 Agent 的私有会话、订阅凭据或未公开的模型 API。Prompt 路线的 Judge 由宿主 Agent 承担，不得为此提取凭据或绕过宿主调用模型 API；同模型自审、订阅内替代模型和应用 API Judge 必须分别记录（词汇表见 5.5），最终仍需用户批准。
 
-**Phase 1 宿主 Agent 的无状态 CLI 协议（已实现；跨宿主验收待人工验证）**：所有命令不交互、不读取 `.env`、不调用模型，命令模块不得导入 `python-dotenv`；只读取显式传入的输入路径（不扫描用户目录或仓库去寻找个人文件），只向显式传入的输出路径或受控的 `private_data/storage/` 写入，且一律为独占创建：目标已存在即报错，绝不覆盖（见 3.2.2）。成功结果以统一的版本化 JSON 信封输出到 stdout（字段见 4.4），简短错误写入 stderr，两者都不打印简历或 JD 全文。宿主 Agent 必须以 JSON 的 `status` 为准，退出码只是粗粒度信号。确定性文本抽取与逐字来源核验由代码完成；把简历内容整理成结构化候选属于宿主 Agent（应用 API 路线为主模型）的工作，代码对其结果只做校验，不替它生成。
+**Phase 1 宿主 Agent 的无状态 CLI 协议（已实现；跨宿主验收待人工验证）**：所有命令不交互、不读取 `.env`、不调用模型，命令模块不得导入 `python-dotenv`；CLI 只读取显式传入的输入路径，不自行扫描用户目录或仓库去寻找个人文件。宿主 Agent 可按 7.3.2 在当前用户的 `private_data/` 中受限发现档案和任务所需文件，无需逐次请求读取权限；未来多用户模式只可发现当前用户专属目录，不能访问其他用户。也可在用户明确提供且属于当前用户的其他输入目录中执行第一层文件名发现。CLI 只向显式传入的输出路径或受控的 `private_data/storage/`、`private_data/profiles/`、`private_data/tmp/` 写入，且一律为独占创建：目标已存在即报错，绝不覆盖（见 3.2.2）。成功结果以统一的版本化 JSON 信封输出到 stdout（字段见 4.4），简短错误写入 stderr，两者都不打印简历或 JD 全文；`--diagnostics-out` 写入不含文档内容的步骤记录。宿主 Agent 必须以 JSON 的 `status` 为准，退出码只是粗粒度信号。确定性文本抽取与逐字来源核验由代码完成；把简历内容整理成结构化候选属于宿主 Agent（应用 API 路线为主模型）的工作，代码对其结果只做校验，不替它生成。
+
+宿主侧发现优先使用已验证、覆盖 Git-ignored 文件的精确深度文件列表 API。Linux/GNU `find` 可作为固定的只读回退，具体命令仅限 7.3.2；这不是 CLI 命令，也不改变 CLI 禁止目录扫描的约束。不得据此声称其他操作系统或宿主提供相同能力。
 
 | 子命令 | 计划用法 | 行为与结果 |
 | :--- | :--- | :--- |
 | `extract-text` | `resume-tailor extract-text <path> [--out <path>] [--no-redact]` | 对 TXT/DOCX/PDF 做确定性文本抽取（PDF 仅读文本层，扫描件或空文本层报错），把 `SourceText` 写入文件（`--out`，默认 `fact_base/sources/{source_sha256}.json`），stdout 只含信封与路径，不含正文。`SourceText` 含源文件哈希、带稳定 `block_id` 与位置的文本块和抽取警告（疑似多栏、乱码等）。默认对 Agent 可见的文本做本地联系信息遮蔽（邮箱、电话、链接、街道地址）：原文映射写入同目录的 `.redaction.json`，身份候选预填到 `identity.local.json` 供用户在本机核对（均为 0600，见 3.2），都不进入 stdout。姓名、公司、学校等无法可靠遮蔽，不作承诺。不做结构化，也不判断事实。 |
 | `validate-facts` | `resume-tailor validate-facts --source <path> --candidates <path> [--ledger-out <path>]` | 校验宿主 Agent 提交的 `FactCandidates`：Schema 合法；全部条目 `user_confirmed=false`；每条 `resume_extract` 来源的 `raw_source_text` 必须是 `SourceText` 文本块中的逐字子串（仅规范化空白），否则报告为伪造来源；未建模章节列入 `unparsed_sections`。同时由代码渲染确认账本并给出 `ledger_sha256`。 |
-| `build-snapshot` | `resume-tailor build-snapshot --candidates <path> --confirmations <path> [--identity <path>] [--parent <path>] --out <path>` | 核对确认记录绑定的 `ledger_sha256` 与候选内容哈希一致，生成不可变快照（`UserFactBase` + `snapshot_sha256`、父快照哈希）；只有被确认的条目进入快照；身份字段只从本机 `--identity` 文件合并；目标文件已存在则报错。 |
+| `build-snapshot` | `resume-tailor build-snapshot --candidates <path> --confirmations <path> [--identity <path>] [--parent <path>] (--out <path> \| --profile-name <username> --profile-source <SourceText-path>) [--diagnostics-out <path>]` | 核对确认记录绑定的 `ledger_sha256` 与候选内容哈希一致，生成不可变快照（`UserFactBase` + `snapshot_sha256`、父快照哈希）；只有被确认的条目进入快照；身份字段只从本机 `--identity` 文件合并。档案模式按安全用户名、事实库版本与来源 SHA-256 写入 `private_data/profiles/`；新版本独占创建，不覆盖已有快照。 |
 | `check-facts` | `resume-tailor check-facts --snapshot <path> --payload <path> [--requirements <path>] [--review <path>]` | 校验 payload 绑定的 `snapshot_sha256`，执行第一、二级确定性校验（5.1–5.2），输出 `passed`/`blocked` 与逐项报告；`--requirements` 提供 JD 要求以启用未支持术语检查；传入 `--review` 时核对其 `payload_sha256` 并按 5.5 汇总审批条件。 |
-| `render` | `resume-tailor render --snapshot <path> --payload <path> (--company <name> --role <title> \| --out-dir <path>) [--job-id <id>] [--requirements <path>] [--review <path>] [--template <name>] [--format docx\|markdown] [--run-id <id>]` | **先在内部执行 `check-facts` 的全部硬校验，阻断则不生成任何简历文件。** 可传入 `--requirements` 以重验 JD 术语和 payload 绑定。默认使用内置 `default` 模板（DOCX 主链），`--format markdown` 才走降级链；未知模板名报错，不静默切换；语言、页数上限取自 payload 的 `run_config`。`--company`/`--role`（用户确认值）用于在 `private_data/storage/` 下查找或创建岗位目录（同公司同岗位名存在多个目录时须显式传入 `--job-id`），`--out-dir` 则明确导出到用户指定路径，不写入受控目录。`job_id`、`run_id`、`artifact_id` 由本命令在本机生成并写入输出 JSON 与候选目录内的 `candidate.json`。输出候选文件、`audit_report.json`、`render_path` 与跳过的检查。 |
+| `render` | `resume-tailor render --snapshot <path> --payload <path> (--company <name> --role <title> \| --out-dir <path>) [--job-id <id>] [--requirements <path>] [--review <path>] [--template <name>] [--format docx\|markdown] [--run-id <id>]` | **先在内部执行 `check-facts` 的全部硬校验，阻断则不生成任何简历文件。** 可传入 `--requirements` 以重验 JD 术语和 payload 绑定。默认使用内置 `default` 模板（DOCX 主链），`--format markdown` 才走降级链；未知模板名报错，不静默切换；语言、页数上限取自 payload 的 `run_config`。`--company`/`--role`（从所选 JD 提取的值，用户可更正）用于在 `private_data/storage/` 下查找或创建岗位目录（同公司同岗位名存在多个目录时须显式传入 `--job-id`），`--out-dir` 则明确导出到用户指定路径，不写入受控目录。`job_id`、`run_id`、`artifact_id` 由本命令在本机生成并写入输出 JSON 与候选目录内的 `candidate.json`。输出候选文件、`audit_report.json`、`render_path` 与跳过的检查。 |
 | `publish` | `resume-tailor publish --candidate-dir <path> --approval <path>` | 校验 `approval.json` 与候选文件哈希一致、且满足 5.5 的审批条件；在同一岗位目录下以独占 `mkdir` 预留 `final/vN/`（N 为现有最大版本加一，冲突则重试）、写入文件并最后写入 `manifest.json`。不覆盖、不修改已有版本。只接受位于受控目录中的候选；用 `--out-dir` 导出的文件由用户自行管理，没有 `final/` 与 manifest。 |
 
 计划中的命令统一使用退出码：`0` 表示完整成功；`1` 表示输入或运行错误（文件缺失、JSON 不合法、写入冲突等）；`2` 保留给命令行用法错误（argparse、Click 等库的默认值，不得改作他用，否则 Agent 无法区分用法错误与门禁阻断）；`3` 表示事实、来源或审批门禁阻断；`4` 表示已生成 DOCX 或 Markdown 候选但 PDF 因环境缺失而降级。`render` 必须在 JSON 中明确列出实际产物和 `skipped_checks`；退出码 `4` 不得被宿主 Agent 当成完整 PDF 导出成功。
@@ -88,10 +90,10 @@ Prompt 路线由宿主编码 Agent 承担对话与生成，不通过本项目的
 **Prompt 路线的确认与信任边界**：Prompt 路线中的确认记录最终由宿主 Agent 写入文件，代码无法证明“用户确实同意”，因此本计划不把 `user_confirmed` 描述为不可伪造的认证，而是用以下措施提高可验证性，并如实披露残余风险：
 
 1. 候选事实一律以 `user_confirmed=false` 进入；`validate-facts` 拒绝任何已被标为确认的候选，抽取阶段不得自动确认。
-2. 由代码从候选渲染“确认账本”（按章节列出事实 ID、原话、规范化陈述、指标与技能）；Agent 必须向用户展示账本原文而非转述，`ledger_sha256` 写入确认记录、快照和 `manifest.json`。
-3. 指标、职责主导权、技能、日期和雇主属于高风险条目，须由 Agent 每次只问一个问题并逐项确认；其余常规条目可由用户按账本批量确认（如“除第 3、7 项外全部确认”），避免数十轮逐条问答。
-4. `render` 与 `publish` 的输出信封都包含 `data.confirmation_summary`：快照哈希、已确认条目数，以及自账本批准以来新增或修改的条目；Agent 必须在用户批准前原样展示，供用户核对。
-5. 需要“确认动作必须由人在界面上完成”的更强保证时，使用 TypeScript 工作台；Prompt 路线的确认只能视为经用户可见账本支持的、由 Agent 记录的确认。
+2. 由代码从候选渲染“确认账本”（按章节列出事实 ID、原话、规范化陈述、指标与技能）；对首次或来源哈希已变化的简历，Agent 展示简洁摘要并请求一次来源级选择，随后将用户明确提供的来源事实映射到确认记录。一次清晰选择即是该动作的最终确认，不再要求逐项选择或第二次键入 `confirm`。
+3. 指标、职责主导权、技能、日期和雇主等高风险标签仍可在账本中提示审阅，但对于简历明确陈述的来源事实不触发逐项确认。仅对含糊/矛盾来源、用户编辑、模型建议或无法从来源支持的主张暂停澄清或拒绝确认；来源级选择不豁免来源引文与确定性校验。
+4. `render` 与 `publish` 的输出信封都包含 `data.confirmation_summary`：快照哈希、已确认条目数，以及自账本批准以来新增或修改的条目；Prompt 路线在完成摘要中展示，要求用户审批的工作台路线则须在审批前展示。
+5. 用户选择的资料档案中若 `resume_source_sha256` 与当前来源一致，则复用原不可变快照，不重复确认；来源改变时构建新版本并再次请求一次来源级选择。需要“确认动作必须由人在界面上完成”的更强保证时，使用 TypeScript 工作台；Prompt 路线的确认只能视为经用户可见账本支持的、由 Agent 记录的确认。
 
 ---
 
@@ -280,9 +282,9 @@ Prompt 与 TypeScript 工作台共用类型化数据契约、事实校验、文�
 
 ### 3.2 运行时用户文件存储架构 (Runtime User Storage Architecture)
 
-`documents/` 仅用于普通项目文档；简历、JD、事实快照、生成产物和其他包含个人信息的数据放在仓库内单独的 `private_data/`，并由 Git 忽略。`documents/` 现已被 Git 跟踪，`.gitignore` 不再忽略它，因此任何个人资料都不得放入；Phase 1 增加仓库护栏测试（见 8.3 与 9 节）。Prompt 路线不设置默认简历/JD 文件，不扫描仓库或用户目录；Agent 必须先询问用户是粘贴内容还是指定确切文件，并在读取个人资料前获得确认。只有用户批准写入后，候选与正式产物才默认按经确认的公司名和岗位保存到 `private_data/storage/`；用户也可明确选择其他导出路径。原始简历和 JD 不得被覆盖。
+`documents/` 仅用于普通项目文档；简历、JD、事实快照、生成产物、资料档案、诊断记录和其他包含个人信息的数据放在仓库内单独的 `private_data/`，并由 Git 忽略。`documents/` 现已被 Git 跟踪，`.gitignore` 不再忽略它，因此任何个人资料都不得放入；Phase 1 增加仓库护栏测试（见 8.3 与 9 节）。当前单用户 Prompt 路线把 `private_data/` 作为当前用户的工作目录；简历定制请求允许 Agent 对任务相关文件做有界发现和读取，无需另行询问读取权限，但首次读取前仍需披露宿主的数据处理方式。Agent 只读取完成任务所需的文件，不递归扫描；文件/档案候选有歧义时询问选择，而不是询问能否访问。未来多用户实现必须把每位用户的全部个人数据（含上传、档案、事实快照、生成产物、身份 sidecar、诊断、数据库、checkpoint 和备份）放在 `private_data/users/{stable_user_id}/` 下，禁止跨用户列目录或读写文件；从当前简历/档案识别用户后，只能使用对应目录，身份映射不明确时仅请求用户指出自己的档案/目录。用户明确提供的其他输入目录也必须属于当前用户。只有用户批准写入后，候选与正式产物才默认按经确认的公司名和岗位保存到 `private_data/storage/`；用户也可明确选择其他导出路径。原始简历和 JD 不得被覆盖。
 
-计划中的应用运行目录为 `private_data/storage/`，备份放在 `private_data/backups/`。下图展示 `private_data/storage/` 的内部结构，文中 `storage/...` 均指相对于 `private_data/` 的路径：
+计划中的应用运行目录为 `private_data/storage/`，备份放在 `private_data/backups/`；Prompt 路线的版本化事实档案放在 `private_data/profiles/<profile-name>/`，步骤诊断记录放在 `private_data/tmp/<run-id>/`。档案包含个人事实及来源摘录，因此和其他简历数据一样敏感；诊断记录只含操作元数据。下图描述当前单用户布局与应用存储计划，不构成未来多用户隔离边界；多用户实现必须将整个用户工作目录（而非仅 `storage/users/`）放在 `private_data/users/{stable_user_id}/` 下，包括档案、存储、临时文件、数据库、checkpoint 和备份。文中 `storage/...` 均指相对于 `private_data/` 的路径：
 
 ```text
 storage/
@@ -369,7 +371,7 @@ graph TD
 
 * 本机临时渲染文件、审计报告、导出产物和备份也可能包含个人信息，应保存在 `private_data/` 下或其他明确受保护的位置，不能默认写入 `documents/`。Phase 2–4 的单用户数据库文件位于 `private_data/storage/app.sqlite3`；备份默认写入 `private_data/backups/`。
 * SQLite 仅用于单用户本机阶段，不放在网络文件系统或同步盘上。每个连接（含 SQLAlchemy/aiosqlite 连接池和 Alembic 使用的连接）创建时通过连接事件执行 `PRAGMA foreign_keys=ON`、`PRAGMA journal_mode=WAL` 与 `PRAGMA busy_timeout`：SQLite 默认关闭外键，不开启则外键、`ON DELETE CASCADE` 和删除流程都不会生效，须有测试断言插入悬空外键会失败；同时限制并发写入。需要互斥的写事务（如分配版本号）以 `BEGIN IMMEDIATE` 开始，参考实现通过连接事件在单用户本机场景下对所有事务统一发出（4.3.4），出现读写并发需求时再按事务选择：SQLite 不支持 `SELECT … FOR UPDATE`，SQLAlchemy 在 SQLite 上也不会生成该子句，不得依赖行锁；`UNIQUE` 约束只是最后防线，冲突时重试或返回已有记录。SQLite 不保存时区，所有时间戳以 UTC 存储，由自定义 `UtcDateTime` 类型拒绝无时区的时间并在读取时补回 UTC（4.3.4）。LangGraph Checkpoint 使用独立的 `checkpoints.sqlite3`（表由 `AsyncSqliteSaver.setup()` 创建，不在 Alembic 的 metadata 内）；若将来与业务库同文件，Alembic `env.py` 必须用 `include_object` 排除 `checkpoints` 与 `writes`，并测试 autogenerate 不会生成删除它们的迁移。运行中备份使用 SQLite backup API 或受控 checkpoint，不直接复制可能仍有 WAL 数据的主文件；备份、恢复与删除流程同时覆盖两个 SQLite 文件。PostgreSQL 留待未来集中式多用户服务重新规划。
-* 路径分为两类，策略不同。**受控路径**（`private_data/storage/` 与 `private_data/backups/` 之下）必须经下述防穿越解析后才可读写。**用户指定路径**（用户明确传入的输入文件或导出位置）不套用 `base_dir` 限制，但必须显式给出并经 `Path.resolve()` 规范化：输入只读；输出一律独占创建，目标已存在即报错，因此不可能覆盖原件；父目录必须已存在（命令不在受控目录之外自动创建目录）；新文件权限为 0600。用户应自行保护这些路径；不自动搬迁或复制现有个人文件。真实个人资料和生成产物不得加入测试或提交到 Git。
+* 路径分为两类，策略不同。**受控路径**（`private_data/storage/`、`private_data/backups/`、`private_data/profiles/` 与 `private_data/tmp/` 之下）必须经下述防穿越解析或对应的专用路径校验后才可读写。**用户指定路径**（用户明确传入的输入文件或导出位置）不套用 `base_dir` 限制，但必须显式给出并经 `Path.resolve()` 规范化：输入只读；输出一律独占创建，目标已存在即报错，因此不可能覆盖原件；父目录必须已存在（命令不在受控目录之外自动创建目录）；新文件权限为 0600。用户应自行保护这些路径；不自动搬迁或复制现有个人文件。真实个人资料和生成产物不得加入测试或提交到 Git。
 * JD 中的公司名先提取并由用户确认；缺失或不明确时提示用户补充。`company_slug` 只作为安全、可读的目录别名，不直接使用未经规范化的公司名拼接路径；规范化名称冲突时附加稳定标识区分。岗位目录路径在创建岗位时固定（Phase 2+ 记录为 `target_jobs.storage_relpath`），之后更正公司名只更新显示名，不移动目录或已发布文件；整理目录须由用户确认的迁移任务完成并同步所有路径引用。简历、求职信、面试准备材料及其审查报告等候选产物均保存到对应公司的 `jobs/{job_id}/runs/{run_id}/{artifact_id}/`，正式产物保存到同一岗位的 `final/vN/`。每个岗位使用独立 `job_id`，新候选和版本不得覆盖历史文件。
 
 1. **防路径穿越（Path Traversal Defense，适用于受控路径）**：
@@ -638,7 +640,7 @@ class TailoringRunConfig(BaseModel):
     """用户为本次定制选择的参数，随 payload 一起哈希和审计"""
 
     positioning_style: Literal["conservative", "balanced", "assertive"] = "balanced"
-    output_language: str = "en"  # BCP 47，如 "en"、"zh-CN"；决定字符预算与字体
+    output_language: str = "en"  # BCP 47；默认英语，Prompt 路线优先用户指定，否则匹配简历/JD（冲突取 JD）
     target_pages: int | None = Field(default=None, ge=1)  # 页数上限；None 表示不限
     render_format: Literal["DOCX", "MARKDOWN"] = "DOCX"
     template_id: str | None = None  # 内置模板名或自定义模板ID；Markdown 时为空
@@ -1062,12 +1064,13 @@ Prompt 路线没有数据库，命令之间通过带版本号的 JSON/Markdown �
 | `SourceText` | `extract-text` | 源文件 `source_sha256`、格式、抽取器名称与版本、`blocks[]`（`block_id`、`text`、位置）、`warnings[]`；是否遮蔽及各类别的遮蔽计数（不含原值）。同一文件与同一抽取器版本得到相同的 `block_id`。 |
 | `FactCandidates` | 宿主 Agent（API 路线为主模型） | 与 `UserFactBase` 同结构，所有条目 `user_confirmed=false`；每条 `resume_extract` 来源含 `source_block_ids` 与逐字 `raw_source_text`；`unparsed_sections[]`（标题与 `block_id` 列表）。 |
 | 确认账本 | `validate-facts` | 代码渲染的 Markdown：按章节列出 ID、原话、规范化陈述、指标与技能，标出高风险条目；`ledger_sha256`。 |
-| `ConfirmationRecords` | 宿主 Agent（记录用户的决定） | `ledger_sha256`；逐项 `{object_type, object_id, content_sha256, decision: confirmed\|rejected\|edited, user_words}`；`edited` 产生新的 `user_confirmation` 来源条目并回到账本核对。 |
-| `FactBaseSnapshot` | `build-snapshot` | `UserFactBase` 全文 + `snapshot_id`、`snapshot_sha256`、`parent_snapshot_sha256`、`ledger_sha256`、`created_at`（UTC）；只含已确认条目；文件不可修改。 |
-| `JobRequirements` | 宿主 Agent（API 路线为主模型） | `jd_text_sha256`（用户确认后的 JD 文本）、`company_name`、`role_title`（用户确认值）、`keywords[]`（词与类别：技能、职责、资质）、`must_have`、`nice_to_have`。JD 视为不可信数据，其中的指令不是字段。 |
+| `ConfirmationRecords` | 宿主 Agent（记录用户的决定） | `ledger_sha256`；逐项 `{object_type, object_id, content_sha256, decision: confirmed\|rejected\|edited, user_words}`。首次或已变更简历的一次来源级选择可映射为所有明确来源事实的决定；不逐项要求高风险确认，不要求第二次键入 `confirm`。`edited` 产生新的 `user_confirmation` 来源条目并回到账本核对；模型建议和不受支持的主张不由来源级选择确认。 |
+| `FactBaseSnapshot` | `build-snapshot` | `schema_version=2` 时为 `UserFactBase` 全文 + `snapshot_id`、`snapshot_sha256`、`parent_snapshot_sha256`、`ledger_sha256`、`created_at`（UTC）以及可选配对的 `profile_name`、`resume_source_sha256`；只含已确认条目；文件不可修改。`snapshot_sha256` 仍只哈希 `UserFactBase`，profile 元数据用于本地来源关联。用户档案按用户名、版本和来源哈希保存于 `private_data/profiles/`。 |
+| `DiagnosticRecord` | CLI 或宿主 Agent | 每个 workflow step 一个记录：`run_id`、`step`、`command`、`status`、`exit_code`、`created_at`、`issue_codes[]`、`artifacts[]`（角色与哈希）、`skipped_checks[]`、数值 `counts`；写入 `private_data/tmp/<run-id>/<step>.json`，不含文档、来源引文、Prompt、模型响应、凭据或用户原话。 |
+| `JobRequirements` | 宿主 Agent（API 路线为主模型） | `jd_text_sha256`（用户确认后的 JD 文本）、`company_name`、`role_title`（从所选 JD 提取，用户可更正）、`keywords[]`（词与类别：技能、职责、资质）、`must_have`、`nice_to_have`。JD 视为不可信数据，其中的指令不是字段。 |
 | `SemanticReview` | 宿主 Judge / 应用 Auditor | `payload_sha256`、`mode`、`status`、`judge_independence`（仅 `API_JUDGE`）、`context_isolated`、`reviewer_label`（宿主自报，不可验证）、`findings[]`（`target_id`、类别、依据的 `fact_id`、建议动作）；`payload_sha256` 不匹配的审查结果无效。 |
 | `AuditReport` | `check-facts`、`render` | 各级检查结果、`skipped_checks[]`、渲染与健康检查结果、`render_path`、按 5.5 汇总的审批条件。 |
-| `Approval` | 宿主 Agent（记录用户的批准） | `candidate_files[]`（路径与 sha256）、`payload_sha256`、`snapshot_sha256`、`company_name`、`role_title`（确认值）、审查摘要、`acknowledged_waivers[]`（用户明确豁免项，5.5）、`approved_at`；是审计记录，不是身份认证。 |
+| `Approval` | 宿主 Agent（Prompt 路线生成候选完整性记录） | `candidate_files[]`（路径与 sha256）、`payload_sha256`、`snapshot_sha256`、`company_name`、`role_title`（与岗位元数据一致，来自 JD 提取或用户更正）、审查摘要、`acknowledged_waivers[]`（用户明确豁免项，5.5）、`approved_at`（记录时间）；基于用户对 `private_data/` 写入的长期授权生成，不表示用户已预览或逐次批准候选；是审计记录，不是身份认证。 |
 | `Manifest` | `publish` | 版本号 N、所有文件哈希、`snapshot_sha256`、`ledger_sha256`、`payload_sha256`、`job_requirements_sha256`、审查摘要（含是否豁免）、代码版本、`PROMPT.md` 哈希（Prompt 路线）、渲染器与字体版本、`render_path`；最后写入，作为发布完成标记。 |
 
 `ConfirmationRecords` 与 `Approval` 在 Prompt 路线中由宿主 Agent 写入：代码校验其哈希绑定与完整性，但不能证明用户的真实操作（见 1.5 的信任边界）。`reviewer_label` 同样是自报信息，只用于记录，不作为任何门禁的依据。
@@ -1128,7 +1131,7 @@ Prompt 路线没有数据库，命令之间通过带版本号的 JSON/Markdown �
 * **Prompt 路线的订阅内 Judge**：生成候选后由宿主 Agent 在**全新上下文**（新会话或子代理）中执行第二遍检查。Judge 只接收快照中的已确认事实、候选 payload、JD 抽取出的要求列表和固定的 Judge 指令，不接收生成阶段的对话、推理或 JD 原文，以减少共享上下文带来的锚定偏差和 JD 中的指令注入。Judge 输出必须符合 `SemanticReview`（4.4）：逐条 findings，每条带 `target_id`、类别、依据的 `fact_id` 与建议动作，并绑定候选的 `payload_sha256`。宿主不能提供新上下文时，必须记录 `context_isolated=false` 并向用户披露这是更弱的自审。默认由生成模型自审；若当前订阅和宿主明确支持其他模型，且用户同意，可使用订阅内替代 Judge。只允许通过宿主公开支持的模型选择功能，不调用应用 provider 或未公开接口。
 * **应用 API 路线的 Auditor**：使用单独配置的 `JUDGE_LLM_*` 审查模型，输入输出契约同上；其 provider、模型和凭据不得与主模型静默复用。不同模型可能降低共同偏差，但不保证完全独立或一定拦截问题，实际独立程度记录为 `judge_independence`。
 * **禁止整份简历重写**：自审或 Auditor 输出目标条目、相关事实 ID 和修改指导，下游仅修复违规条目；每次自动修复、用户编辑或快照更新后重新执行来源校验、硬校验和对应路线的语义检查。审查结果只对其绑定的 `payload_sha256` 有效，payload 一经修改，旧审查结果作废。
-* **审查模式与失败边界**：模式词汇、状态和审批条件见 5.5。替代模型不可用时明确询问是否回退同模型自审；任何模式的 Judge 通过都不能省略用户最终批准。应用 API 路线配置缺失、调用失败或结果不确定时，状态为 `UNAVAILABLE`，不回退主模型或 Prompt 路线。
+* **审查模式与失败边界**：模式词汇、状态和审批条件见 5.5。替代模型不可用时明确询问是否回退同模型自审；Judge 通过不替代事实与渲染硬门禁。Prompt 路线在门禁通过后按用户的长期写入指令自动发布；TypeScript 工作台仍要求显式批准。`NOT_RUN` 或 `UNAVAILABLE` 仍须用户明确豁免，Agent 不得代为豁免。应用 API 路线配置缺失、调用失败或结果不确定时，状态为 `UNAVAILABLE`，不回退主模型或 Prompt 路线。
 
 ### 5.4 人机交互澄清分支 (HITL Clarification Branch)
 * **主动求助机制**：缺少指标时可选地请求补充并提供定性选项；存在重要未证实主张或审查争议时必须澄清或移除。对用户确认的事实仍需重新检查生成文本是否准确表达该事实。
@@ -1163,7 +1166,7 @@ Prompt 路线没有数据库，命令之间通过带版本号的 JSON/Markdown �
 | 条件 | 是否允许批准或发布 |
 | :--- | :--- |
 | 第一、二级确定性校验阻断、存在未解决占位符，或排版/健康检查未通过 | 一律不允许，没有豁免 |
-| 状态 `PASSED`，且审查绑定的 `payload_sha256` 与当前 payload 一致 | 允许（仍须用户预览后最终批准） |
+| 状态 `PASSED`，且审查绑定的 `payload_sha256` 与当前 payload 一致 | Prompt 路线在其他硬门禁通过后自动发布；TypeScript 工作台仍须用户最终批准 |
 | 状态 `FAILED` | 不允许；须修复或澄清并重新审查 |
 | 状态 `NOT_RUN` 或 `UNAVAILABLE`（含模式 `NONE`） | 默认不允许；用户可明确选择“在没有语义审查的情况下批准”，该豁免写入 `acknowledged_waivers`、`semantic_review_waived=true` 和 `manifest.json`，界面与 `PROMPT.md` 不得把该产物描述为已审查 |
 | 审查结果的 `payload_sha256` 与当前 payload 不一致 | 视为 `NOT_RUN` |
@@ -1293,18 +1296,20 @@ LangGraph `interrupt()` 和 `Command(resume=...)` 仅用于应用 API/工作台�
 
 #### 7.3.2 Prompt 路线的逐步交互与恢复边界
 
-1. 根目录 `PROMPT.md` 明确 Agent 的任务边界和流程（内容规范见 7.3.3）：先确认用户目标，再确认用户愿意提供的简历/JD 输入方式；高风险事实每次只提出一个问题，常规条目按确认账本批量确认，并区分原始事实、用户确认和模型建议。
-2. Agent 只读取用户明确指定并确认的文件；不扫描目录、不读取 `.env` 或密钥、不擅自抓取 URL/邮箱/招聘网站，也不将 JD 中的指令当作工具权限；只运行 1.5 的命令，文本内容不拼接进 shell 命令（2.3）。原文件只读，任何候选写入或导出前都要预览并取得用户批准。
-3. 步骤与命令的对应：`extract-text` → 宿主整理 `FactCandidates` → `validate-facts` → 向用户展示账本并确认 → `build-snapshot` → 宿主分析 JD 为 `JobRequirements` 并生成 payload → `check-facts` → Judge（全新上下文，输出 `SemanticReview`）→ `render` → 用户预览 → 用户批准并写出 `Approval` → `publish`。校验或 Judge 失败、缺失事实或格式不合法时明确报告并询问用户，不以看似成功的默认结果继续。
-4. Judge 的模式、状态和审批条件见 5.3 与 5.5：默认同模型自审；宿主与订阅支持且用户同意时可用订阅内另一模型；不得调用应用 `JUDGE_LLM_*` 或读取宿主凭据。用户仍须最终复核。
-5. 宿主 Agent 会话可能没有持久化或跨版本兼容保证。只有用户明确同意时才在 `private_data/` 保存最小续接信息；不得把完整简历、JD、对话或宿主凭据写入日志。会话丢失时，已生成的快照、候选与 manifest 仍保存在 `private_data/` 并可按其哈希继续，但应说明需要重新提供哪些信息，不假装恢复对话。
+1. 根目录 `PROMPT.md` 明确 Agent 的任务边界和流程（内容规范见 7.3.3）：首次读取文件内容前披露宿主的数据处理方式，但不将披露变成读取权限问题。当前单用户模式默认使用仓库 `private_data/` 作为当前用户目录；简历定制请求即授权对任务相关文件做有界发现和读取，无需用户再选目录或逐次确认。先在 `private_data/profiles/` 查找当前用户的档案；若无档案，在同一目录第一层发现简历和 JD；若有有效档案，则以档案替代简历来源，仍在同一目录查找当前 JD（档案不含 JD）。多个档案或文件候选有歧义时询问选择，不询问读取权限。未来多用户模式必须将每位用户的全部数据放入 `private_data/users/{stable_user_id}/`，使用当前简历或档案识别用户，只访问其目录，绝不探查或访问其他用户的数据；身份映射不明确时仅请求用户指出自己的档案/目录。明确提供的其他输入目录也必须属于当前用户。用户若只要求查找文件名，该请求只授权 names-only 发现，不读取内容，也不追加读取权限问题。对新简历或来源哈希已变化的简历，用户的一次清晰选择即可确认简历中明确陈述的来源事实，不逐条追问指标、职责主导权、技能、日期或雇主；来源含糊、矛盾、用户编辑或模型建议仍须另行处理。从 JD 自动提取公司和岗位，不询问清晰可提取的信息。自动确定输出语言：明确用户指定优先；两份语言一致时使用共同语言，不一致时使用 JD 语言，仅一份语言可识别时使用该语言，两份都不清楚时默认英语 `en`。可选偏好采用默认值（定位 `balanced`）；只对文件歧义或确实缺少的必要信息提问，并区分原始事实、用户确认和模型建议。未被简历支持的 JD 要求不是完成门槛；事实快照确认后、生成 payload 前，一次性列出所有未覆盖或部分覆盖的 requirement（must-have 与 nice-to-have），按优先级建议“有真实证据时补充”或“略过”。只对建议补充的项目给出 2–3 个条件式证据建议，最多集中询问一次；不逐项追问，未回答的项目省略并继续。
+2. 当前用户目录内的发现必须使用宿主原生精确深度文件名查询（例如只匹配一个路径分量的 glob），不得使用会展开显示子目录内容的通用目录浏览器。`private_data/` 为 Git-ignored；尊重 `.gitignore` 的 workspace glob/search 即使返回零结果，也不能据此认定档案、简历或 JD 不存在。查询必须覆盖 ignored 文件；若宿主 glob 不覆盖，则只可使用限定到当前精确目录且仅返回直接子项名称的原生列表。Linux/GNU `find` 主机可在没有经验证的原生列表时，使用 `PROMPT.md` 中固定的 `-P`、`-mindepth`、`-maxdepth` 只读查询作为默认 `private_data/` 的唯一 shell 回退；它不跟随符号链接、不读取内容，也不扩展 CLI 命令白名单。任何查询失败均记为 `discovery_incomplete`；只有完整列表的零候选才表示缺失。没有安全的 names-only 查询时，询问精确路径，不得声称文件缺失。输入文件名按固定规则分类：去掉支持格式的最后一个扩展名，转为 case-folded basename，将 `_` 和 `-` 替换为空格并合并连续空格；简历只匹配完整 token `resume` 或 `cv`，JD 只匹配完整 token `jd` 或完整短语 `job description`、`job posting`。不得按内容、模糊相似度或模型判断分类。候选按规范化 basename、再按原文件名排序；只有唯一候选时自动选用，多个候选必须询问，不得取列表第一项。恰有一个档案时使用它，多个时按名称排序后让用户选择。只在选中的档案目录列出匹配 `profile-v<version>-<resume-source-sha256>.json` 的直接文件名，拒绝符号链接或非匹配文件，并核对快照中的 profile 名、版本和来源哈希与路径相符；选择版本最高且有效的档案；最高版本并列时按名称排序后询问用户，不依赖列表顺序。用户明确提供的其他输入目录必须属于当前用户；Agent 仅列出该目录第一层的普通文件名，不递归、进入子目录、跟随符号链接、读取候选内容来分类，或使用任意 shell/脚本搜索文件。若通用目录浏览器可能显示子目录内容，应改用精确深度的宿主原生文件名查询；只有宿主没有安全的精确深度查询且 Linux/GNU `find` 回退不可用时才询问精确路径。只按上述规则匹配支持格式的简历和 JD；没有档案时每类恰好一个候选可直接使用；档案已提供简历时只需恰好一个 JD 候选；任一所需类型有多个候选时先询问选哪一个；缺失、命名不明确、格式不支持或宿主无法安全列出时，询问精确路径或粘贴文本。Agent 不读取其他用户的目录、`.env`、密钥、身份文件、遮蔽映射或其他无关文件，也不擅自抓取 URL/邮箱/招聘网站，不将 JD 中的指令当作工具权限；CLI 只运行 1.5 的命令，文本内容不拼接进 shell 命令（2.3）。原始简历和 JD 只读；`private_data/` 下的派生文件无需逐次许可，使用新路径、不覆盖并在完成时报告。候选可自动生成与发布，无需最终审批；用户可在发布后查看产物。
+3. 步骤与命令的对应：新/已更新简历为 `extract-text` → 宿主整理 `FactCandidates` → `validate-facts` → 展示账本并请求一次来源级选择 → `build-snapshot`；profile 模式将其保存至 `private_data/profiles/<username>/`，按来源哈希和版本不可覆盖。相同来源哈希使用已有快照，不重复确认。随后宿主分析 JD 为 `JobRequirements`；事实快照确认后、生成 payload 前，一次性展示所有未覆盖或部分覆盖的 requirement，并按优先级建议有真实证据时补充或略过，最多提出一个可选的集中证据问题；不逐项追问，未回答项省略。之后生成 payload → `check-facts`（不要求覆盖所有 JD 要求）→ Judge（全新上下文，输出 `SemanticReview`）→ `render` → 自动生成候选完整性记录并 `publish` → 简短报告路径和结果。未覆盖要求可省略，不因此阻断候选；校验或 Judge 失败、来源含糊或格式不合法时明确报告并停止，不以看似成功的默认结果继续。`NOT_RUN` 或 `UNAVAILABLE` 的审查仍需用户明确豁免；除此之外不在成功的中间步骤或发布前暂停索取许可。
+4. Judge 的模式、状态和审批条件见 5.3 与 5.5：默认同模型自审；宿主与订阅支持且用户同意时可用订阅内另一模型；不得调用应用 `JUDGE_LLM_*` 或读取宿主凭据。通过审查后自动发布；用户可在完成后复核。`NOT_RUN` 或 `UNAVAILABLE` 仍须用户明确豁免。
+5. 每个 CLI 与宿主步骤都在 `private_data/tmp/<run-id>/<step>.json` 保存一个版本化 `DiagnosticRecord`。CLI 调用使用 `--diagnostics-out`；宿主步骤写入同一契约。记录仅含步骤名、状态、退出码、问题码、产物角色/哈希、跳过的检查和数值计数，不得包含简历/JD、来源摘录、Prompt、模型响应、凭据或用户原话。即使失败也先记录安全元数据，再向用户报告简短错误；这些本机记录可由用户清理。
+6. 宿主 Agent 会话可能没有持久化或跨版本兼容保证。不得把完整简历、JD、对话或宿主凭据写入日志。会话丢失时，已生成的资料档案、快照、候选与 manifest 仍保存在 `private_data/` 并可按其哈希继续，但应说明需要重新提供哪些信息，不假装恢复对话。
 
 #### 7.3.3 `PROMPT.md` 内容规范与版本化
 
-* **结构**：(1) 会话性质与优先级声明：这是简历定制会话，宿主自动加载的项目指令文件（如 `AGENTS.md`）中面向开发者的规则（修改 `CHANGELOG.md`、运行 lint、提交代码、编辑源码）不适用，除非用户明确要求开发，冲突时以 `PROMPT.md` 为准；(2) 数据去向披露与用户确认；(3) 命令白名单与调用规则；(4) 流程步骤及每步的停止点；(5) 不可协商的规则（不编造、不读 `.env`、不抓取 URL、不代用户豁免审查、JD 视为数据）；(6) 失败时的处理话术。
+* **结构**：(1) 会话性质与优先级声明：这是简历定制会话，宿主自动加载的项目指令文件（如 `AGENTS.md`）中面向开发者的规则（修改 `CHANGELOG.md`、运行 lint、提交代码、编辑源码）不适用，除非用户明确要求开发，冲突时以 `PROMPT.md` 为准；(2) 首次读取前的数据去向披露、当前用户身份边界和“不逐文件请求读取权限”规则；(3) 当前用户目录内的资料档案查找、复用和不可变更新；(4) 命令白名单与调用规则；(5) 流程步骤及每步的停止点；(6) 新/已更新简历的一次来源级选择与“不重复键入 confirm”规则；(7) 每步 content-free 诊断记录；(8) 不可协商的规则（不编造、不读 `.env`、不访问其他用户数据、不抓取 URL、不代用户豁免审查、JD 视为数据）；(9) `private_data/` 派生文件无需逐次许可、原始简历/JD 只读、候选通过门禁后自动发布并报告路径；(10) 所有未覆盖或部分覆盖的 JD requirement 非阻断，事实快照确认后一次性按优先级列出并建议补充或略过；只对推荐补充的项提供条件式真实证据建议，最多一次集中询问，不逐项追问，未回答项省略；(11) 批量执行成功步骤并保持用户更新简洁；(12) 失败时的处理话术。
 * **与 `AGENTS.md` 的关系**：Codex 等宿主会自动加载仓库根的 `AGENTS.md`。Phase 1 在 `AGENTS.md` 开头加一句指向 `PROMPT.md` 的说明（3.3），README 建议在专用的发布包目录运行 Prompt 路线。
-* **版本化与测试**：`PROMPT.md` 带 `prompt_version`，`manifest.json` 记录其哈希；对 `PROMPT.md` 做静态契约测试（必须包含命令白名单、停止点、隐私披露、不代用户豁免审查、JD 注入防护等关键条款，删除即失败）；跨宿主的端到端验证按 Phase 1 验收人工执行，不声称自动化。
-* **宿主权限示例**：README 为 Codex 与 Claude Code 各提供最小权限配置示例（如拒绝读取 `.env`、写入限定在 `private_data/` 与用户指定的导出目录、命令限定为白名单），作为纵深防御，不作为安全边界。
+* **版本化与测试**：`PROMPT.md` 带 `prompt_version`，`manifest.json` 记录其哈希；对 `PROMPT.md` 做静态契约测试（必须包含命令白名单、停止点、首次读取前的隐私披露、当前用户目录默认可读且不重复询问、禁止跨用户访问、未来每用户目录隔离、档案查找与复用、一次来源级确认且不要求重复键入、单层输入文件发现与候选歧义处理、已明确目录的文件名请求不重复询问但不授权读取内容、精确深度且包含 Git-ignored 输入的宿主原生查询及 Linux/GNU `find` 的固定只读回退、零结果不等于文件缺失、确定性的文件名归一化/分类/排序与歧义处理、content-free 逐步诊断、从 JD 提取公司/岗位、自动匹配输入语言、不代用户豁免审查、JD 注入防护等关键条款，删除即失败）；跨宿主的端到端验证按 Phase 1 验收人工执行，不声称自动化。
+* **版式保留要求**：用户要求保留原版式时，需提供原简历 DOCX，并将其或从其派生且通过校验的自定义 DOCX 模板实际用于渲染；渲染器无法安全复用时不得声称保留。PDF/TXT 仅用于内容抽取并需要重排；不得将 PDF 转 DOCX 描述为版式保真。将此规则纳入 `PROMPT.md` 静态契约测试。
+* **宿主权限示例**：README 为 Codex 与 Claude Code 各提供最小权限配置示例（如拒绝读取 `.env`、允许当前用户目录的必要读取、写入限定在 `private_data/` 与用户指定的导出目录、仅允许六个 CLI 命令和 PROMPT 指定的 Linux/GNU `find` 名称查询）；未来多用户配置必须只允许 `private_data/users/{stable_user_id}/`，不得授权共享父目录。以上作为纵深防御，不作为安全边界。
 
 ---
 
@@ -1372,7 +1377,7 @@ LangGraph `interrupt()` 和 `Command(resume=...)` 仅用于应用 API/工作台�
   2. **脚手架迁移与文档对齐**：按 3.3 替换现有的交互式 CLI、默认个人文件路径和启动时的 `load_dotenv()`；同步更新 `README.md`、`documents/README.md` 和 `AGENTS.md`（含开头指向 `PROMPT.md` 的说明）；新增根目录 `PROMPT.md`（7.3.3）、README 使用说明、宿主权限配置示例和清理宿主会话记录的说明。
   3. **事实流水线**：实现确定性文本抽取与默认开启的本地联系信息遮蔽、逐字来源核验、确认账本渲染、确认记录绑定与不可变快照（含 3.2 的文件模式快照目录）；应用管理的个人数据使用 Git 忽略的 `private_data/`，普通文档使用 `documents/`。Prompt 路线要求用户粘贴 JD 或明确选择文件，不默认抓取 URL。
   4. **确定性校验**：实现第一、二级校验（5.1、5.2）：快照绑定、技能 ID 子集、未支持术语（随项目版本化的术语表与别名表）、实体落地、数字规范化与指标闭环、派生数字阻止；并按 5.5 汇总审批条件。
-  5. **生成与 Judge**：由宿主编码 Agent 订阅提供生成与逐步问答，按三档风格改写已有事实；候选生成后由宿主在全新上下文中执行 Judge（5.3），默认同模型自审，若订阅和宿主支持且用户同意，可切换至订阅内另一模型。Agent 对高风险事实每次只问一个问题，常规条目按账本批量确认；未解决的问题阻止批准。不得从 `.env` 读取密钥，也不配置或调用应用 `MAIN_LLM_*` 或 `JUDGE_LLM_*`。
+  5. **生成与 Judge**：由宿主编码 Agent 订阅提供生成与逐步问答，按三档风格改写已有事实；候选生成后由宿主在全新上下文中执行 Judge（5.3），默认同模型自审，若订阅和宿主支持且用户同意，可切换至订阅内另一模型。对首次或已变更简历的一次来源级选择确认明确陈述的来源事实；不逐项追问高风险来源事实，不要求第二次键入 `confirm`；含糊、矛盾、用户编辑或模型建议仍须处理，未解决的问题阻止批准。用户选择后可复用 `private_data/profiles/<username>/` 中来源哈希相同的不可变快照。每步将 content-free 诊断记录写入 `private_data/tmp/<run-id>/`。不得从 `.env` 读取密钥，也不配置或调用应用 `MAIN_LLM_*` 或 `JUDGE_LLM_*`。
   6. **渲染与发布**：提供内置默认 DOCX 模板与 DOCX 主渲染（沙箱化 docxtpl、`{{r }}` 标签约定，6.1）；用户明确选择 Markdown 或模板不可用时的 Markdown -> 受限 HTML -> LibreOffice PDF 回退；自有行内标记转换器；LibreOffice 预检及缺失时的 DOCX/Markdown 降级导出（退出码 4）。对已生成 PDF 检查页数及可自动检查的问题，允许人工预览、批准，并以独占 `mkdir` 加 manifest 的方式本地发布（7.1）。按实际方式记录审查模式，不得描述为 `API_JUDGE`；状态为 `NOT_RUN` 或 `UNAVAILABLE` 时按 5.5 阻止批准（用户可明确豁免并留痕）。
   7. **护栏与可选便笺**：增加仓库护栏测试（8.3）；可选实现当前岗位的轻量 `application_note.md`，仅在用户要求后记录手动确认的状态、更新时间和下一步；不实现看板、跨岗位搜索、状态时间线、提醒或问题聚合。运行 ID、错误信息和合成测试从第一阶段加入；Prompt 宿主会话不承诺跨进程恢复。
 * **验收标准**：
@@ -1484,6 +1489,7 @@ LangGraph `interrupt()` 和 `Command(resume=...)` 仅用于应用 API/工作台�
 ### 11.1 可观测性与隐私
 
 * **结构化日志**：为每次 run、候选产物和尝试记录关联 ID、节点名称、状态转换、错误类别、耗时和重试次数；不记录简历、JD、Prompt、模型原始响应、身份、凭据或占位符映射。用户界面显示安全的错误摘要和关联 ID。
+* **Prompt 路线诊断记录**：每个 CLI 与宿主 Agent 步骤都在 Git 忽略的 `private_data/tmp/<run-id>/<step>.json` 保存 `DiagnosticRecord`，包含状态、退出码、问题码、产物角色/哈希、跳过的检查和数值计数，不含文档内容、来源摘录或用户原话。失败步骤也先保存安全元数据，再向用户报告；记录由用户本地保留或删除，不发送到外部遥测。
 * **分布式追踪**：Prompt 本机任务、API、LangGraph 节点、provider、数据库和渲染器通过 trace/span 关联；恢复后的新执行关联原 run 和尝试，不能假装中断前后是同一次调用。宿主 Agent 内部的模型调用、订阅用量和服务端 trace 不归本项目控制，也不得声称可完整观测。可使用标准追踪格式，但本地日志为默认；外部遥测必须由用户明确启用，仅发送经过审核的非敏感元数据。
 * **指标与本机提示**：记录请求量、运行状态、节点耗时、失败和重试率、模型限流/超时、预算耗尽、审查失败、等待人工、发布对账失败及渲染失败。指标标签不得包含用户 ID、岗位、文件名、文档内容或其他高基数/敏感值。本机模式提供清晰的状态和错误提示，不要求搭建集中式监控或告警服务。
 * **测试泄露边界**：以合成的姓名、联系方式和凭据占位值作为探针，检查日志、异常、指标、追踪、导出与 `checkpoints.sqlite3` 均不包含这些值；不依赖单个脱敏过滤器作为唯一防线。

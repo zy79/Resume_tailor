@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import TypeVar
 from uuid import uuid4
@@ -12,6 +13,8 @@ from pydantic import BaseModel, ValidationError
 from resume_tailor.contracts import canonical_json_bytes
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+_PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_DIAGNOSTIC_STEP_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
 
 class ProtocolError(ValueError):
@@ -32,26 +35,81 @@ def resolve_input_path(path: str | Path) -> Path:
 
 
 def ensure_private_directory(path: str | Path) -> Path:
-    private_root = Path("private_data").absolute()
-    target = Path(path).absolute()
+    private_root = Path.cwd() / "private_data"
+    target = Path(path).expanduser()
+    if "\0" in str(target) or ".." in target.parts:
+        raise ProtocolError(
+            "Managed output path is not allowed.", code="unsafe_path"
+        )
+    if not target.is_absolute():
+        target = Path.cwd() / target
     try:
-        target.relative_to(private_root)
+        relative = target.relative_to(private_root)
     except ValueError as error:
         raise ProtocolError(
             "Managed output must stay under private_data/.", code="unsafe_path"
         ) from error
 
     current = private_root
-    for part in ("", *target.relative_to(private_root).parts):
+    for part in ("", *relative.parts):
         if part:
             current = current / part
         if current.is_symlink():
             raise ProtocolError("Managed output path contains a symbolic link.", code="unsafe_path")
-        current.mkdir(mode=0o700, exist_ok=True)
         try:
+            current.mkdir(mode=0o700, exist_ok=True)
+            if not current.is_dir():
+                raise OSError("managed path is not a directory")
             current.chmod(0o700)
         except OSError as error:
             raise ProtocolError("Could not secure the managed output directory.") from error
+    return target
+
+
+def ensure_profile_directory(profile_name: str) -> Path:
+    if not _PROFILE_NAME_PATTERN.fullmatch(profile_name):
+        raise ProtocolError("Profile name must be a safe local identifier.", code="unsafe_path")
+    return ensure_private_directory(Path("private_data") / "profiles" / profile_name)
+
+
+def profile_snapshot_path(profile_name: str, version: int, source_sha256: str) -> Path:
+    if version < 1 or not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
+        raise ProtocolError("Profile snapshot metadata is invalid.", code="invalid_input")
+    profile_dir = ensure_profile_directory(profile_name)
+    return profile_dir / f"profile-v{version:04d}-{source_sha256}.json"
+
+
+def prepare_diagnostic_output(path: str | Path) -> Path:
+    target = Path(path).expanduser()
+    if "\0" in str(target) or ".." in target.parts:
+        raise ProtocolError("Diagnostics output path is not allowed.", code="unsafe_path")
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    diagnostics_root = Path.cwd() / "private_data" / "tmp"
+    try:
+        relative = target.relative_to(diagnostics_root)
+    except ValueError as error:
+        raise ProtocolError(
+            "Diagnostics must be saved under private_data/tmp/.", code="unsafe_path"
+        ) from error
+
+    if len(relative.parts) != 2:
+        raise ProtocolError(
+            "Diagnostics path must identify a run and a step file.", code="unsafe_path"
+        )
+    run_id, filename = relative.parts
+    step = Path(filename).stem
+    if (
+        not _PROFILE_NAME_PATTERN.fullmatch(run_id)
+        or Path(filename).suffix != ".json"
+        or not _DIAGNOSTIC_STEP_PATTERN.fullmatch(step)
+    ):
+        raise ProtocolError("Diagnostics path is not a safe run-step path.", code="unsafe_path")
+
+    ensure_private_directory(target.parent)
+    if target.exists() or target.is_symlink():
+        raise ProtocolError("Output target already exists.", code="output_conflict")
     return target
 
 

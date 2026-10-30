@@ -40,9 +40,9 @@ The Prompt route enables end-to-end, privacy-conscious resume customization usin
 ### Key Principles
 
 1. **No Project API Keys Required**: Model generation is performed by the host assistant under your existing assistant subscription. The local `resume-tailor` CLI does not read `.env`, import `python-dotenv`, or make external network calls.
-2. **Local-First & Explicit Inputs**: Commands operate only on explicitly supplied file paths. They never scan user folders or repository files for personal materials.
-3. **Exclusive File Creation**: Outputs are written using exclusive file flags (`os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW` with `0600` file permissions). Existing targets are never silently overwritten.
-4. **Transparent Trust Boundary**: The host assistant operates over user-confirmed data and records confirmations. Code provides mathematical certainty over file integrity, verbatim quotation, and schema constraints, but human review remains the final approval authority.
+2. **Local-First & Explicit Inputs**: CLI commands operate only on explicitly supplied file paths and never scan folders. After the privacy disclosure, the user may select the repository's `private_data/` folder without typing its path. This checks `private_data/profiles/` first; if no profile exists, the assistant automatically looks in the same folder for a resume and JD. A profile supplies resume facts but not a JD, so the assistant still looks for the JD in that folder. Discovery is limited to immediate names, never recurses, and does not inspect file contents to classify candidates.
+3. **Exclusive File Creation**: Outputs are written using exclusive file flags (`os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW` with `0600` file permissions). Profile and temporary diagnostic directories use `0700`. Existing targets are never silently overwritten. Writes of generated workflow files under `private_data/` need no per-write approval; the assistant reports created paths.
+4. **Transparent Trust Boundary**: The host assistant records the source-level choices you make; code checks file integrity, verbatim quotations, schema constraints, factual support, and render health. The Prompt route publishes automatically after required gates pass under your standing `private_data/` write instruction; it does not claim you reviewed the candidate. You can inspect the reported files afterward.
 5. **Data Flow & Privacy**: While files remain on your local disk under Git-ignored `private_data/`, interactions with host agents (like Claude Code or Codex) transit the host provider's model services and local conversation transcripts. This workflow is local-first, but not offline.
 
 ---
@@ -88,6 +88,11 @@ All personal inputs, intermediate candidates, snapshots, and final versions belo
 Resume_tailor/
 ├── PROMPT.md                             # Root instructions for your host agent
 ├── private_data/                         # GIT-IGNORED: All personal and job materials
+│   ├── profiles/                       # Versioned, user-selected resume fact snapshots
+│   │   └── {profile-name}/
+│   │       └── profile-v0001-{source_sha256}.json
+│   ├── tmp/                            # Content-free per-step diagnostics
+│   │   └── {run-id}/{step}.json
 │   └── storage/
 │       ├── fact_base/
 │       │   ├── sources/{source_sha}.json # Extracted resume text (redacted)
@@ -117,6 +122,11 @@ Resume_tailor/
 > [!WARNING]
 > Never place real personal resumes, job descriptions, or generated output into `documents/` or commit them to Git.
 
+Profile snapshots are sensitive: they contain structured resume facts and verbatim source excerpts
+for provenance, though not the full extracted resume document or a job description. Reading a
+profile sends its contents to the host model service under the same disclosure as reading a resume.
+Diagnostic records contain only status, issue codes, artifact roles and hashes, and numeric counts.
+
 ---
 
 ## 4. End-to-End Workflow Walkthrough
@@ -129,19 +139,28 @@ Start a session with your host coding agent (e.g. Claude Code or Codex) and prov
 
 The agent will:
 1. Acknowledge that this is a resume-tailoring session (developer rules from `AGENTS.md` are suspended).
-2. Request your target job title, output language (e.g., `en`), and positioning style (`conservative`, `balanced`, or `assertive`). For the template style and target page count, it defaults to matching your existing resume (unless you provide a custom template or request a built-in style like `classic`, `modern`, or `compact`).
-3. Disclose host data processing and ask you to select specific input files or paste input text into `private_data/`.
+2. Before the first file-content read, disclose that the host may process document content and retain the conversation. In the current single-user local workflow, the repository's `private_data/` is the active user's workspace, so the assistant uses it for task-relevant discovery and reads without asking the user to select the folder or approve each file. A direct names-only request permits only that lookup; it does not authorize reading file contents, and the assistant reports filenames without asking a separate permission question.
+3. Check `private_data/profiles/` first. If no profile exists, automatically look in the same workspace for a resume and JD. If a profile exists, it supplies the resume facts and the assistant still looks in that workspace for the current JD; a profile does not contain a JD. Multiple profiles or candidate files require a choice of which input to use, not permission to read. You can instead provide exact file paths or pasted text. The assistant reads only task-relevant files before asking about tailoring preferences.
+4. The assistant extracts the company and job title from the JD and selects the output language from the source documents without asking you to restate those details. It uses their shared language, the JD's language if they differ, or the only identifiable source language; it uses English (`en`) only if neither language is clear.
+5. Ask about positioning style (`conservative`, `balanced`, or `assertive`) only after inspecting the inputs. The assistant can preserve the original layout only when the source resume is DOCX and is used as the render-template source (or as the basis for a validated custom template). PDF/TXT inputs require re-layout; if you explicitly require the original layout, provide the original DOCX. A PDF-to-DOCX conversion does not restore formatting. Otherwise, the assistant uses a suitable built-in or custom template and discloses that it is reconstructing the layout; source page count is a target when known, not a guarantee.
+
+For troubleshooting, each CLI command can write a content-free record with
+`--diagnostics-out private_data/tmp/<run-id>/<step>.json`. The host assistant saves the same
+`DiagnosticRecord` shape for steps that do not invoke the CLI. Keep records local and delete them
+when no longer needed; they must never contain resume/JD text, source quotes, prompts, or responses.
 
 ---
 
 ### Step 2: Extract & Locally Redact Source Text
 
-Run `extract-text` on your source resume (`.txt`, `.docx`, or `.pdf`):
+Run `extract-text` on your source resume (`.txt`, `.docx`, or `.pdf`). The assistant also extracts
+text from a selected JD file when needed to identify its requirements, company, and role:
 
 ```bash
 resume-tailor extract-text \
   private_data/raw_resume.pdf \
-  --out private_data/storage/fact_base/sources/source.json
+  --out private_data/storage/fact_base/sources/source.json \
+  --diagnostics-out private_data/tmp/run_001/extract-resume.json
 ```
 
 **What occurs:**
@@ -176,7 +195,7 @@ resume-tailor extract-text \
 
 ### Step 3: Candidate Fact Structuring & Ledger Generation
 
-Your host assistant reads `source.json` (not the redaction sidecar or `.env`) and parses your history into a `FactCandidates` JSON file. Every item begins with `"user_confirmed": false`.
+Your host assistant reads `source.json` (not the redaction sidecar or `.env`) and parses your history into a `FactCandidates` JSON file. Every item begins with `"user_confirmed": false`. If you selected an existing profile and its resume-source hash is unchanged, reuse its snapshot rather than parsing or confirming the resume again.
 
 The assistant then calls `validate-facts`:
 
@@ -184,7 +203,8 @@ The assistant then calls `validate-facts`:
 resume-tailor validate-facts \
   --source private_data/storage/fact_base/sources/source.json \
   --candidates private_data/candidates.json \
-  --ledger-out private_data/storage/fact_base/ledgers/ledger.md
+  --ledger-out private_data/storage/fact_base/ledgers/ledger.md \
+  --diagnostics-out private_data/tmp/run_001/validate-facts.json
 ```
 
 **What the code verifies:**
@@ -198,30 +218,50 @@ resume-tailor validate-facts \
 ### Step 4: User Confirmation & Snapshot Creation
 
 1. The assistant presents the ledger (`ledger.md`) directly to you.
-2. **High-risk items** (numerical metrics, leadership/responsibility claims, skills, dates, employers) are reviewed individually. Routine items can be batch-confirmed.
-3. If you edit a statement, it must be marked `edited` with your exact wording and re-validated.
-4. The assistant records your decisions into `confirmations.json` with the exact `ledger_sha256`.
-5. You build an immutable snapshot:
+2. For a first or changed resume, the assistant summarizes the parsed facts and asks for one source-level choice to use them. Facts stated in your resume—including metrics, responsibilities, skills, dates, and employers—do not require individual high-risk confirmation. A clear selection is final; there is no second typed `confirm`. High-risk labels in the ledger are informational.
+3. The assistant still flags only ambiguous parsing, contradictory source text, and unsupported or model-suggested claims. If you correct a specific statement, it must be marked `edited` with your exact wording and re-validated.
+4. If the resume-source hash matches the saved profile, the assistant reuses that snapshot without asking you to confirm its facts again. A changed resume requires one source-level choice for the newly parsed facts.
+5. The assistant records the one source-level choice in `confirmations.json`, bound to the exact `ledger_sha256`.
+6. Build an immutable snapshot:
 
 ```bash
 resume-tailor build-snapshot \
   --candidates private_data/candidates.json \
   --confirmations private_data/confirmations.json \
   --identity private_data/storage/fact_base/sources/identity.local.json \
-  --out private_data/storage/fact_base/snapshots/snapshot_v1.json
+  --profile-name <username> \
+  --profile-source private_data/storage/fact_base/sources/source.json \
+  --diagnostics-out private_data/tmp/run_001/build-snapshot.json
 ```
+
+For a one-off run without a saved profile, use `--out <snapshot-path>` instead of
+`--profile-name` and `--profile-source`. Profile snapshots are immutable and versioned under
+`private_data/profiles/<username>/`; pass `--parent` only when extending that same profile.
 
 **Verification Guarantees:**
 - Verifies that `confirmations.ledger_sha256` matches the candidate facts.
 - Only confirmed facts (`decision == "confirmed"`) enter the snapshot with `user_confirmed: true`.
 - Merges contact identity only from your local file.
-- Calculates an immutable canonical `snapshot_sha256`.
+- Calculates an immutable canonical `snapshot_sha256` and records the profile's resume-source hash.
 
 ---
 
 ### Step 5: Draft Payload & Run Deterministic Fact Checks
 
-The assistant extracts structured job requirements into `requirements.json` (company, role, keywords) and drafts `payload.json` quoting only confirmed facts and metrics from `snapshot_v1.json`.
+The assistant extracts structured job requirements into `requirements.json` (company and role from
+the JD, plus keywords) and drafts `payload.json` quoting only confirmed facts and metrics from
+`snapshot_v1.json`. It sets the output language from the resume and JD as described in Step 1,
+unless you explicitly requested another language.
+
+JD coverage is advisory, not a completion gate. After the source snapshot is confirmed and before
+drafting, the assistant presents one concise, priority-ordered list of every unsupported or
+partially supported requirement, including must-haves and nice-to-haves. Each row recommends
+supplementing only if real evidence exists or skipping the requirement; higher priority goes to
+explicit must-haves and core duties, while peripheral gaps are marked to skip. Rows worth
+supplementing include 2–3 conditional, requirement-specific examples of evidence the user might
+provide. The assistant asks at most one optional batch question for the whole list, never a
+separate question per requirement. The user can address any subset or none; unanswered gaps are
+omitted and the workflow continues. Suggestions are not resume claims.
 
 Before generating any document, the assistant runs `check-facts`:
 
@@ -229,7 +269,8 @@ Before generating any document, the assistant runs `check-facts`:
 resume-tailor check-facts \
   --snapshot private_data/storage/fact_base/snapshots/snapshot_v1.json \
   --payload private_data/payload.json \
-  --requirements private_data/requirements.json
+  --requirements private_data/requirements.json \
+  --diagnostics-out private_data/tmp/run_001/check-facts.json
 ```
 
 **Deterministic Gates (Levels 1 & 2):**
@@ -258,7 +299,9 @@ The review produces `review.json` bound to `payload_sha256`:
 
 ### Step 7: Render Document Candidate
 
-The assistant renders the resume candidate:
+After deterministic checks pass and any permitted review waiver is recorded, the assistant renders
+the candidate to the managed `private_data/` destination without a separate pre-render approval.
+It reports created paths; preview and explicit approval are not required before publishing.
 
 ```bash
 resume-tailor render \
@@ -268,6 +311,7 @@ resume-tailor render \
   --role "Senior Backend Engineer" \
   --requirements private_data/requirements.json \
   --review private_data/review.json \
+  --diagnostics-out private_data/tmp/run_001/render.json \
   --format docx
 ```
 
@@ -286,16 +330,20 @@ Candidates are staged under `private_data/storage/companies/{company-slug}/jobs/
 
 ---
 
-### Step 8: User Approval & Versioned Publishing
+### Step 8: Automatic Versioned Publishing
 
-You inspect the candidate PDF/DOCX and review the `confirmation_summary` in the CLI output.
-
-When satisfied, the assistant records your approval in `approval.json` (capturing file hashes, metadata, and any explicit review waiver text), and calls `publish`:
+If deterministic and render-health checks pass and the Judge passed (or you explicitly waived a
+missing/unavailable review), the assistant creates `approval.json` from the exact candidate hashes
+and review metadata as an integrity record, then calls `publish` automatically. This record does not
+claim that you reviewed or individually approved the candidate. Missing-review waivers still
+require your explicit choice; failed checks or a failed Judge always block publication. The
+assistant reports the `confirmation_summary` and final artifact paths so you can inspect them:
 
 ```bash
 resume-tailor publish \
   --candidate-dir private_data/storage/companies/acme-corp-.../jobs/job_.../runs/run_.../artifact_... \
-  --approval private_data/approval.json
+  --approval private_data/tmp/run_001/approval.json \
+  --diagnostics-out private_data/tmp/run_001/publish.json
 ```
 
 **Publishing Guarantees:**
@@ -324,23 +372,28 @@ resume-tailor publish \
 
 ```bash
 # 1. Extract source text and redact contact information
-resume-tailor extract-text <source_path> [--out <out_path>] [--no-redact]
+resume-tailor extract-text <source_path> [--out <out_path>] [--no-redact] [--diagnostics-out <path>]
 
 # 2. Validate extracted facts and render confirmation ledger
-resume-tailor validate-facts --source <source_json> --candidates <candidates_json> [--ledger-out <ledger_md>]
+resume-tailor validate-facts --source <source_json> --candidates <candidates_json> [--ledger-out <ledger_md>] [--diagnostics-out <path>]
 
 # 3. Compile confirmed facts into immutable snapshot
-resume-tailor build-snapshot --candidates <candidates_json> --confirmations <confirmations_json> [--identity <identity_json>] [--parent <parent_json>] --out <snapshot_json>
+resume-tailor build-snapshot --candidates <candidates_json> --confirmations <confirmations_json> [--identity <identity_json>] [--parent <parent_json>] (--out <snapshot_json> | --profile-name <username> --profile-source <source_json>) [--diagnostics-out <path>]
 
 # 4. Check tailored payload against fact snapshot
-resume-tailor check-facts --snapshot <snapshot_json> --payload <payload_json> [--requirements <requirements_json>] [--review <review_json>]
+resume-tailor check-facts --snapshot <snapshot_json> --payload <payload_json> [--requirements <requirements_json>] [--review <review_json>] [--diagnostics-out <path>]
 
 # 5. Render resume candidate (DOCX or Markdown) and test PDF health
-resume-tailor render --snapshot <snapshot_json> --payload <payload_json> (--company <name> --role <title> | --out-dir <dir>) [--job-id <id>] [--requirements <req_json>] [--review <review_json>] [--template <name>] [--format docx|markdown] [--run-id <id>]
+resume-tailor render --snapshot <snapshot_json> --payload <payload_json> (--company <name> --role <title> | --out-dir <dir>) [--job-id <id>] [--requirements <req_json>] [--review <review_json>] [--template <name>] [--format docx|markdown] [--run-id <id>] [--diagnostics-out <path>]
 
-# 6. Publish approved candidate into immutable final version
-resume-tailor publish --candidate-dir <candidate_dir> --approval <approval_json>
+# 6. Publish validated candidate into immutable final version
+resume-tailor publish --candidate-dir <candidate_dir> --approval <approval_json> [--diagnostics-out <path>]
 ```
+
+`--diagnostics-out` must point under `private_data/tmp/`. Use a unique
+`private_data/tmp/<run-id>/<step>.json` path for every step. Records contain only operational
+metadata (status, exit code, issue codes, artifact roles and hashes, skipped checks, and counts),
+never document content, source quotes, prompts, model output, or user wording.
 
 ---
 
@@ -368,4 +421,21 @@ To enforce defense-in-depth when running Claude Code or Codex:
 - **Codex**:
   Set `sandbox_mode = "read-only"` and `approval_policy = "on-request"` in `~/.codex/config.toml`. Approve writes only to target paths under `private_data/`.
 - **Claude Code**:
-  Maintain `.claude/settings.local.json` with deny rules for `.env` and `src/**` writes, restricting shell execution to the six `resume-tailor` commands and read/write operations to `private_data/`.
+  Maintain `.claude/settings.local.json` with deny rules for `.env`, redaction sidecars, and
+  `identity.local.json`. In the current single-user workflow, allow reads in `private_data/` without
+  per-file prompts; keep writes ask-gated and restrict shell execution to the six `resume-tailor`
+  commands plus only the fixed, read-only discovery queries in `PROMPT.md`.
+
+For active-user profile or input discovery, use a host-native exact-depth file-listing tool and
+verify that it includes Git-ignored `private_data/` entries. A zero-match workspace glob that
+honors `.gitignore` is inconclusive, not proof that no resume or profile exists. If no verified
+native listing is available, Linux hosts with GNU `find` may use only the fixed, read-only,
+exact-depth queries in the root `PROMPT.md` for the default workspace. They do not open file
+contents, follow symlinks, or recurse; do not pass custom paths to them or enable arbitrary shell
+discovery. On other hosts, use a verified native query or ask for exact paths only when no safe
+listing is available. Follow the fixed filename normalization, matching, and sorted ambiguity
+handling in the root `PROMPT.md`; never choose the first listing result. Read only task-relevant
+files; do not access another user's directory. If multi-user support is added, keep every user's
+data under `private_data/users/<stable-user-id>/` and grant the host read access only to the active
+user's directory, never the shared parent. Keep writes ask-gated. Do not enable recursive or
+repository-wide searches.

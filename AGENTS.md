@@ -1,9 +1,13 @@
 # Project Instructions
 
+For resume-tailoring sessions, follow the root `PROMPT.md`; the development rules below apply only
+when the user asks to change this repository. Host, system, and safety instructions always take
+precedence. The Prompt workflow uses the model service and session history of the selected host.
+
 ## Project Shape
 
 - This is a Python 3.11+ project. Keep application code under `src/resume_tailor/` and tests under `tests/`.
-- The primary interface is the CLI. FastAPI is an optional API; there is no frontend currently.
+- The user-facing workflow is Prompt-first through `PROMPT.md`; the six-command CLI is stateless and non-interactive. FastAPI is optional, and there is no frontend currently.
 - LangGraph owns agent workflow orchestration. Keep model calls behind injected async callables or provider abstractions rather than coupling graph nodes to a vendor SDK.
 
 ## Python Style
@@ -18,7 +22,8 @@
 
 - The main resume generator and the independent judge/auditor are separate model roles. Configure them with `MAIN_LLM_*` and `JUDGE_LLM_*` variables from `.env`.
 - Never silently reuse the main model or API key for the judge. Keep provider, model, base URL, and credentials independently configurable.
-- Load local configuration with `python-dotenv`. Never print, commit, or include API keys in tests, logs, error messages, or documentation. `.env` must remain ignored by Git; update `.env.example` when configuration variables change.
+- Phase 1 CLI commands must not read `.env`, import `python-dotenv`, or make model calls. Keep dotenv loading confined to optional API/provider code.
+- Never print, commit, or include API keys in tests, logs, error messages, or documentation. `.env` and local `.env.*` files must remain ignored by Git; `.env.example` is the only exception. Update it when configuration variables change.
 - Do not claim that a model role is implemented merely because its environment variables exist. Add and test the corresponding provider and LangGraph node before reporting it as functional.
 
 ## Resume Data and Privacy

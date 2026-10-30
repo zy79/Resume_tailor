@@ -1,6 +1,6 @@
 # Production-Grade Resume Tailor Agent: 详细实施计划 (v2.3 修订版)
 
-本文档是尚未实现的工程计划，旨在构建一个以用户确认的履历事实为依据、可恢复运行并重视隐私的简历定制 Agent。当前产品以用户下载后的单用户本机运行为主，采用两条交互路线：默认通过仓库根目录的 `PROMPT.md`，让用户现有的编码 Agent（如 Claude Code 或 Codex）一步步提问并完成核心简历定制；这条路线不要求本项目直接调用模型 API 或另购 API Key，但不等同于离线运行，模型访问由编码 Agent 的订阅/服务提供。TypeScript 前端仍作为本机完整工作台保留，承载多岗位看板、筛选和跨申请历史汇总等更适合图形界面的功能。交互式 CLI 不再作为产品用户界面；CLI 保留为供 Agent 或自动化调用的非交互本机命令（见 1.5）。集中式服务器仅是未来发展方向，不纳入当前实施阶段。各阶段仅声明实际实现并验证过的能力，不将模型审查、隐私保护或排版检查描述为绝对保证。
+本文档是分阶段工程路线图，不代表所有规划能力都已实现。Phase 1 的 Prompt 核心流水线及合成自动化测试已在代码中实现；Codex 与 Claude Code 的跨宿主端到端验收仍需人工执行，尚未在本项目中验证。Phase 2–4 仍为计划。产品以用户下载后的单用户本机运行为主，采用两条交互路线：默认通过仓库根目录的 `PROMPT.md`，让用户现有的编码 Agent（如 Claude Code 或 Codex）一步步提问并完成核心简历定制；这条路线不要求本项目直接调用模型 API 或另购 API Key，但不等同于离线运行，模型访问由编码 Agent 的订阅/服务提供。TypeScript 前端仍作为本机完整工作台保留，承载多岗位看板、筛选和跨申请历史汇总等更适合图形界面的功能。交互式 CLI 不再作为产品用户界面；CLI 保留为供 Agent 或自动化调用的非交互本机命令（见 1.5）。集中式服务器仅是未来发展方向，不纳入当前实施阶段。各阶段仅声明实际实现并验证过的能力，不将模型审查、隐私保护或排版检查描述为绝对保证。
 
 ---
 
@@ -72,7 +72,7 @@ Prompt 路线由宿主编码 Agent 承担对话与生成，不通过本项目的
 
 完整申请追踪、跨岗位搜索/聚合、提醒、可视化时间线和多轮面试资料管理归属 TypeScript UI；Prompt 路线只提供可选的单岗位便笺，不将其描述为等价看板。两条路线共用事实契约、确定性校验、文件存储和渲染规则，但不共享宿主 Agent 的私有会话、订阅凭据或未公开的模型 API。Prompt 路线的 Judge 由宿主 Agent 承担，不得为此提取凭据或绕过宿主调用模型 API；同模型自审、订阅内替代模型和应用 API Judge 必须分别记录（词汇表见 5.5），最终仍需用户批准。
 
-**Phase 1 宿主 Agent 的无状态 CLI 协议（计划接口，当前尚未实现）**：所有命令不交互、不读取 `.env`、不调用模型，命令模块不得导入 `python-dotenv`；只读取显式传入的输入路径（不扫描用户目录或仓库去寻找个人文件），只向显式传入的输出路径或受控的 `private_data/storage/` 写入，且一律为独占创建：目标已存在即报错，绝不覆盖（见 3.2.2）。成功结果以统一的版本化 JSON 信封输出到 stdout（字段见 4.4），简短错误写入 stderr，两者都不打印简历或 JD 全文。宿主 Agent 必须以 JSON 的 `status` 为准，退出码只是粗粒度信号。确定性文本抽取与逐字来源核验由代码完成；把简历内容整理成结构化候选属于宿主 Agent（应用 API 路线为主模型）的工作，代码对其结果只做校验，不替它生成。
+**Phase 1 宿主 Agent 的无状态 CLI 协议（已实现；跨宿主验收待人工验证）**：所有命令不交互、不读取 `.env`、不调用模型，命令模块不得导入 `python-dotenv`；只读取显式传入的输入路径（不扫描用户目录或仓库去寻找个人文件），只向显式传入的输出路径或受控的 `private_data/storage/` 写入，且一律为独占创建：目标已存在即报错，绝不覆盖（见 3.2.2）。成功结果以统一的版本化 JSON 信封输出到 stdout（字段见 4.4），简短错误写入 stderr，两者都不打印简历或 JD 全文。宿主 Agent 必须以 JSON 的 `status` 为准，退出码只是粗粒度信号。确定性文本抽取与逐字来源核验由代码完成；把简历内容整理成结构化候选属于宿主 Agent（应用 API 路线为主模型）的工作，代码对其结果只做校验，不替它生成。
 
 | 子命令 | 计划用法 | 行为与结果 |
 | :--- | :--- | :--- |
@@ -80,7 +80,7 @@ Prompt 路线由宿主编码 Agent 承担对话与生成，不通过本项目的
 | `validate-facts` | `resume-tailor validate-facts --source <path> --candidates <path> [--ledger-out <path>]` | 校验宿主 Agent 提交的 `FactCandidates`：Schema 合法；全部条目 `user_confirmed=false`；每条 `resume_extract` 来源的 `raw_source_text` 必须是 `SourceText` 文本块中的逐字子串（仅规范化空白），否则报告为伪造来源；未建模章节列入 `unparsed_sections`。同时由代码渲染确认账本并给出 `ledger_sha256`。 |
 | `build-snapshot` | `resume-tailor build-snapshot --candidates <path> --confirmations <path> [--identity <path>] [--parent <path>] --out <path>` | 核对确认记录绑定的 `ledger_sha256` 与候选内容哈希一致，生成不可变快照（`UserFactBase` + `snapshot_sha256`、父快照哈希）；只有被确认的条目进入快照；身份字段只从本机 `--identity` 文件合并；目标文件已存在则报错。 |
 | `check-facts` | `resume-tailor check-facts --snapshot <path> --payload <path> [--requirements <path>] [--review <path>]` | 校验 payload 绑定的 `snapshot_sha256`，执行第一、二级确定性校验（5.1–5.2），输出 `passed`/`blocked` 与逐项报告；`--requirements` 提供 JD 要求以启用未支持术语检查；传入 `--review` 时核对其 `payload_sha256` 并按 5.5 汇总审批条件。 |
-| `render` | `resume-tailor render --snapshot <path> --payload <path> (--company <name> --role <title> \| --out-dir <path>) [--job-id <id>] [--review <path>] [--template <name>] [--format docx\|markdown] [--run-id <id>]` | **先在内部执行 `check-facts` 的全部硬校验，阻断则不生成任何简历文件。** 默认使用内置 `default` 模板（DOCX 主链），`--format markdown` 才走降级链；未知模板名报错，不静默切换；语言、页数上限取自 payload 的 `run_config`。`--company`/`--role`（用户确认值）用于在 `private_data/storage/` 下查找或创建岗位目录（同公司同岗位名存在多个目录时须显式传入 `--job-id`），`--out-dir` 则明确导出到用户指定路径，不写入受控目录。`job_id`、`run_id`、`artifact_id` 由本命令在本机生成并写入输出 JSON 与候选目录内的 `candidate.json`。输出候选文件、`audit_report.json`、`render_path` 与跳过的检查。 |
+| `render` | `resume-tailor render --snapshot <path> --payload <path> (--company <name> --role <title> \| --out-dir <path>) [--job-id <id>] [--requirements <path>] [--review <path>] [--template <name>] [--format docx\|markdown] [--run-id <id>]` | **先在内部执行 `check-facts` 的全部硬校验，阻断则不生成任何简历文件。** 可传入 `--requirements` 以重验 JD 术语和 payload 绑定。默认使用内置 `default` 模板（DOCX 主链），`--format markdown` 才走降级链；未知模板名报错，不静默切换；语言、页数上限取自 payload 的 `run_config`。`--company`/`--role`（用户确认值）用于在 `private_data/storage/` 下查找或创建岗位目录（同公司同岗位名存在多个目录时须显式传入 `--job-id`），`--out-dir` 则明确导出到用户指定路径，不写入受控目录。`job_id`、`run_id`、`artifact_id` 由本命令在本机生成并写入输出 JSON 与候选目录内的 `candidate.json`。输出候选文件、`audit_report.json`、`render_path` 与跳过的检查。 |
 | `publish` | `resume-tailor publish --candidate-dir <path> --approval <path>` | 校验 `approval.json` 与候选文件哈希一致、且满足 5.5 的审批条件；在同一岗位目录下以独占 `mkdir` 预留 `final/vN/`（N 为现有最大版本加一，冲突则重试）、写入文件并最后写入 `manifest.json`。不覆盖、不修改已有版本。只接受位于受控目录中的候选；用 `--out-dir` 导出的文件由用户自行管理，没有 `final/` 与 manifest。 |
 
 计划中的命令统一使用退出码：`0` 表示完整成功；`1` 表示输入或运行错误（文件缺失、JSON 不合法、写入冲突等）；`2` 保留给命令行用法错误（argparse、Click 等库的默认值，不得改作他用，否则 Agent 无法区分用法错误与门禁阻断）；`3` 表示事实、来源或审批门禁阻断；`4` 表示已生成 DOCX 或 Markdown 候选但 PDF 因环境缺失而降级。`render` 必须在 JSON 中明确列出实际产物和 `skipped_checks`；退出码 `4` 不得被宿主 Agent 当成完整 PDF 导出成功。
@@ -1363,6 +1363,8 @@ LangGraph `interrupt()` 和 `Command(resume=...)` 仅用于应用 API/工作台�
 ---
 
 ### Phase 1: Prompt 核心端到端闭环 (Prompt-First Core Pipeline)
+
+> Status: the local core implementation and synthetic automated tests are present; Codex/Claude Code end-to-end acceptance remains a manual, unverified check.
 
 * **目标**：以 `PROMPT.md` 和用户现有的编码 Agent 订阅跑通核心定制闭环；不要求用户另购本项目 API Key，也不把 CLI 当作交互界面。
 * **执行任务**：

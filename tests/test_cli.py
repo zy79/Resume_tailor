@@ -1,68 +1,151 @@
+import json
 from pathlib import Path
 
+import pytest
+
 from resume_tailor import cli
-from resume_tailor.cli import _read_document
+from resume_tailor.contracts import (
+    FactBaseSnapshot,
+    FactCandidates,
+    TailoredResumePayload,
+    UnparsedSection,
+    UserFactBase,
+    sha256_json,
+)
+from resume_tailor.exchange import extract_source_text
 
 
-class FakeAgent:
-    async def tailor_resume(self, *, resume_text: str, job_description: str) -> str:
-        assert resume_text == "Synthetic resume"
-        assert job_description == "Synthetic job description"
-        return "Synthetic tailored resume"
+def test_extract_text_emits_json_without_source_text(tmp_path: Path, capsys) -> None:
+    source = tmp_path / "source.txt"
+    output = tmp_path / "source.json"
+    source.write_text("Synthetic Engineer\nreader@example.test", encoding="utf-8")
+
+    result = cli.main(["extract-text", str(source), "--out", str(output)])
+    captured = capsys.readouterr()
+    envelope = json.loads(captured.out)
+
+    assert result == 0
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "extract-text"
+    assert envelope["status"] == "ok"
+    assert "reader@example.test" not in captured.out
+    assert "reader@example.test" not in captured.err
+    assert output.exists()
 
 
-def test_read_document_uses_default_path_when_prompt_is_blank(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    document_path = tmp_path / "resume.txt"
-    document_path.write_text("Resume contents", encoding="utf-8")
-    monkeypatch.setattr("builtins.input", lambda _: "")
-
-    document = _read_document("Resume", None, document_path)
-
-    assert document == "Resume contents"
-
-
-def test_cli_uses_private_data_defaults(monkeypatch, tmp_path: Path, capsys) -> None:
-    private_data = tmp_path / "private_data"
-    private_data.mkdir()
-    (private_data / "resume.txt").write_text("Synthetic resume", encoding="utf-8")
-    (private_data / "job_description.txt").write_text(
-        "Synthetic job description", encoding="utf-8"
+def test_gate_block_is_json_and_uses_exit_code_3(tmp_path: Path, capsys) -> None:
+    fact_base = UserFactBase()
+    snapshot = FactBaseSnapshot(
+        snapshot_id="snap_synthetic",
+        snapshot_sha256=sha256_json(fact_base),
+        ledger_sha256="0" * 64,
+        created_at="2026-01-01T00:00:00Z",
+        fact_base=fact_base,
     )
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(cli, "load_dotenv", lambda: False)
-    monkeypatch.setattr(cli, "ResumeTailoringAgent", FakeAgent)
-
-    assert cli.main([]) == 0
-    assert capsys.readouterr().out == "Synthetic tailored resume\n"
-
-
-def test_cli_does_not_fall_back_to_documents(monkeypatch, tmp_path: Path, capsys) -> None:
-    documents = tmp_path / "documents"
-    documents.mkdir()
-    (documents / "resume.txt").write_text("Synthetic resume", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(cli, "load_dotenv", lambda: False)
-
-    assert cli.main([]) == 1
-    assert "private_data/resume.txt" in capsys.readouterr().err
-
-
-def test_cli_accepts_explicit_input_and_output_paths(monkeypatch, tmp_path: Path) -> None:
-    resume = tmp_path / "input-resume.txt"
-    job = tmp_path / "input-job.txt"
-    output = tmp_path / "output" / "tailored.txt"
-    resume.write_text("Synthetic resume", encoding="utf-8")
-    job.write_text("Synthetic job description", encoding="utf-8")
-    monkeypatch.setattr(cli, "load_dotenv", lambda: False)
-    monkeypatch.setattr(cli, "ResumeTailoringAgent", FakeAgent)
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(snapshot.model_dump_json(), encoding="utf-8")
+    payload = TailoredResumePayload(
+        snapshot_sha256=snapshot.snapshot_sha256,
+        selected_skill_ids=[],
+    )
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text(payload.model_dump_json(), encoding="utf-8")
 
     result = cli.main(
-        ["--resume", str(resume), "--job-description", str(job), "--output", str(output)]
+        ["check-facts", "--snapshot", str(snapshot_path), "--payload", str(payload_path)]
     )
+    captured = capsys.readouterr()
+    envelope = json.loads(captured.out)
+
+    assert result == 3
+    assert envelope["status"] == "blocked"
+    assert envelope["issues"]
+    assert captured.err == ""
+
+
+def test_validate_facts_does_not_echo_unparsed_section_text(
+    tmp_path: Path, capsys
+) -> None:
+    source_text = "Synthetic private section text that must not appear in command output."
+    source_path = tmp_path / "source.txt"
+    source_path.write_text(source_text, encoding="utf-8")
+    source_json = tmp_path / "source.json"
+    source, _ = extract_source_text(source_path, source_json)
+    candidates_path = tmp_path / "candidates.json"
+    candidates_path.write_text(
+        FactCandidates(
+            unparsed_sections=[
+                UnparsedSection(
+                    title=source_text,
+                    source_block_ids=[source.blocks[0].block_id],
+                )
+            ]
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+
+    result = cli.main(
+        [
+            "validate-facts",
+            "--source",
+            str(source_json),
+            "--candidates",
+            str(candidates_path),
+            "--ledger-out",
+            str(tmp_path / "ledger.md"),
+        ]
+    )
+    captured = capsys.readouterr()
+
     assert result == 0
-    assert output.read_text(encoding="utf-8") == "Synthetic tailored resume"
+    assert source_text not in captured.out
+    assert source_text not in captured.err
+
+
+def test_usage_error_keeps_argparse_exit_code_2(capsys) -> None:
+    with pytest.raises(SystemExit) as error:
+        cli.main(["build-snapshot"])
+
+    assert error.value.code == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_render_accepts_explicit_job_requirements_path() -> None:
+    args = cli._build_parser().parse_args(
+        [
+            "render",
+            "--snapshot",
+            "snapshot.json",
+            "--payload",
+            "payload.json",
+            "--out-dir",
+            "candidate",
+            "--requirements",
+            "requirements.json",
+        ]
+    )
+
+    assert args.requirements == Path("requirements.json")
+
+
+def test_cli_module_does_not_import_dotenv_or_model_agent() -> None:
+    source = Path(cli.__file__).read_text(encoding="utf-8")
+
+    assert "dotenv" not in source
+    assert "resume_tailor.agent" not in source
+    assert "input(" not in source
+
+
+def test_extract_default_uses_managed_private_storage(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("Synthetic engineer.", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["extract-text", str(source)]) == 0
+    envelope = json.loads(capsys.readouterr().out)
+    stored_path = Path(envelope["data"]["source_path"])
+
+    assert stored_path.is_relative_to(tmp_path / "private_data/storage/fact_base/sources")
+    assert stored_path.exists()

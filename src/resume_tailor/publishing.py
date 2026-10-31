@@ -42,6 +42,12 @@ _FINAL_NAMES = {
     "semantic_review": "semantic_review.json",
     "audit_report": "audit_report.json",
 }
+_RESUME_FILENAME_STEM = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*-\d{8}-\d{6}$")
+_RESUME_SUFFIXES = {
+    "resume_docx": ".docx",
+    "resume_markdown": ".md",
+    "resume_pdf": ".pdf",
+}
 
 
 def _blocked(code: str, message: str, **data: Any) -> tuple[CliResult, int]:
@@ -122,7 +128,15 @@ def _candidate_source_files(
                 "A candidate file hash does not match its record.",
                 code="candidate_hash_mismatch",
             )
-        files[_FINAL_NAMES[entry.role]] = (entry.role, source.read_bytes())
+        final_name = _FINAL_NAMES[entry.role]
+        expected_suffix = _RESUME_SUFFIXES.get(entry.role)
+        if (
+            expected_suffix is not None
+            and relative.suffix == expected_suffix
+            and _RESUME_FILENAME_STEM.fullmatch(relative.stem)
+        ):
+            final_name = relative.name
+        files[final_name] = (entry.role, source.read_bytes())
         by_role[entry.role] = entry
         seen_paths.add(entry.path)
     return files, by_role

@@ -282,6 +282,24 @@ def _make_snapshot_indexes(snapshot: FactBaseSnapshot) -> tuple[
     return bullets, bullet_parents, experiences, projects, education, skills
 
 
+def _resolve_skill_sources(
+    skill_ids: list[str],
+    skills: dict[str, VerifiedSkill],
+    selected_skill_ids: set[str],
+) -> tuple[list[VerifiedSkill], bool]:
+    resolved = [
+        skills[skill_id]
+        for skill_id in skill_ids
+        if skill_id in skills and skill_id in selected_skill_ids
+    ]
+    valid = (
+        len(resolved) == len(skill_ids)
+        and len(skill_ids) == len(set(skill_ids))
+        and all(_fact_is_confirmed(skill) for skill in resolved)
+    )
+    return resolved, valid
+
+
 def _resolve_reference(
     reference: FactReference,
     indexes: tuple[
@@ -473,6 +491,7 @@ def check_resume_facts(
     bullets, bullet_parents, experiences, projects, education, skills = indexes
     duplicate_skill_ids = len(payload.selected_skill_ids) != len(set(payload.selected_skill_ids))
     unknown_skills = sorted(set(payload.selected_skill_ids) - set(skills))
+    selected_skill_ids = set(payload.selected_skill_ids)
     _append_check(
         checks,
         "selected_skill_ids",
@@ -516,6 +535,7 @@ def check_resume_facts(
     jd_terms = {item.term for item in requirements.keywords} if requirements else set()
     term_set = set(TECHNICAL_TERMS) | jd_terms
     entity_allowlist: set[str] = set()
+    expected_requirements_hash: str | None = None
     if requirements is not None:
         entity_allowlist.update(
             value.casefold()
@@ -531,8 +551,6 @@ def check_resume_facts(
             "Payload must be bound to the supplied job-requirements hash.",
             issue_code="requirements_binding_mismatch",
         )
-    else:
-        requirements_hash_valid = True
 
     seen_experience_ids: set[str] = set()
     seen_project_ids: set[str] = set()
@@ -563,6 +581,11 @@ def check_resume_facts(
                 and bool(rewritten.source_fact_ids)
                 and all(_fact_is_confirmed(item) for item in source_items)
             )
+            skill_items, skill_references_valid = _resolve_skill_sources(
+                rewritten.source_skill_ids,
+                skills,
+                selected_skill_ids,
+            )
             _append_check(
                 checks,
                 "bullet_source_binding",
@@ -571,9 +594,17 @@ def check_resume_facts(
                 issue_code="invalid_bullet_source",
                 target_id=rewritten.bullet_id if not references_valid else None,
             )
+            _append_check(
+                checks,
+                "bullet_skill_source_binding",
+                skill_references_valid,
+                "Supporting skill IDs must reference selected, confirmed skills.",
+                issue_code="invalid_bullet_skill_source",
+                target_id=rewritten.bullet_id if not skill_references_valid else None,
+            )
             _validate_segment(
                 rewritten.rewritten_text,
-                source_items,
+                [*source_items, *skill_items],
                 rewritten.used_metric_ids,
                 target_id=rewritten.bullet_id,
                 term_set=term_set,
@@ -607,6 +638,11 @@ def check_resume_facts(
                 and bool(rewritten.source_fact_ids)
                 and all(_fact_is_confirmed(item) for item in source_items)
             )
+            skill_items, skill_references_valid = _resolve_skill_sources(
+                rewritten.source_skill_ids,
+                skills,
+                selected_skill_ids,
+            )
             _append_check(
                 checks,
                 "bullet_source_binding",
@@ -615,9 +651,17 @@ def check_resume_facts(
                 issue_code="invalid_bullet_source",
                 target_id=rewritten.bullet_id if not references_valid else None,
             )
+            _append_check(
+                checks,
+                "bullet_skill_source_binding",
+                skill_references_valid,
+                "Supporting skill IDs must reference selected, confirmed skills.",
+                issue_code="invalid_bullet_skill_source",
+                target_id=rewritten.bullet_id if not skill_references_valid else None,
+            )
             _validate_segment(
                 rewritten.rewritten_text,
-                source_items,
+                [*source_items, *skill_items],
                 rewritten.used_metric_ids,
                 target_id=rewritten.bullet_id,
                 term_set=term_set,
@@ -716,6 +760,7 @@ def check_resume_facts(
     return AuditReport(
         payload_sha256=sha256_json(payload),
         snapshot_sha256=snapshot.snapshot_sha256,
+        expected_job_requirements_sha256=expected_requirements_hash,
         checks=checks,
         skipped_checks=skipped,
         approval_conditions=approval_conditions,

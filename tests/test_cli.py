@@ -8,6 +8,7 @@ from resume_tailor import cli
 from resume_tailor.contracts import (
     FactBaseSnapshot,
     FactCandidates,
+    JobRequirements,
     TailoredResumePayload,
     UnparsedSection,
     UserFactBase,
@@ -154,6 +155,59 @@ def test_gate_block_is_json_and_uses_exit_code_3(tmp_path: Path, capsys) -> None
     assert result == 3
     assert envelope["status"] == "blocked"
     assert envelope["issues"]
+    assert captured.err == ""
+
+
+def test_check_facts_exposes_canonical_requirements_hash(
+    tmp_path: Path, capsys
+) -> None:
+    fact_base = UserFactBase()
+    snapshot = FactBaseSnapshot(
+        snapshot_id="snap_synthetic",
+        snapshot_sha256=sha256_json(fact_base),
+        ledger_sha256="0" * 64,
+        created_at="2026-01-01T00:00:00Z",
+        fact_base=fact_base,
+    )
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(snapshot.model_dump_json(), encoding="utf-8")
+    payload = TailoredResumePayload(
+        snapshot_sha256=snapshot.snapshot_sha256,
+        selected_skill_ids=[],
+    )
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text(payload.model_dump_json(), encoding="utf-8")
+    requirements = JobRequirements(
+        jd_text_sha256="a" * 64,
+        company_name="Synthetic Company",
+        role_title="Synthetic Role",
+    )
+    requirements_path = tmp_path / "requirements.json"
+    requirements_path.write_text(requirements.model_dump_json(), encoding="utf-8")
+
+    result = cli.main(
+        [
+            "check-facts",
+            "--snapshot",
+            str(snapshot_path),
+            "--payload",
+            str(payload_path),
+            "--requirements",
+            str(requirements_path),
+        ]
+    )
+    captured = capsys.readouterr()
+    envelope = json.loads(captured.out)
+    audit_report = envelope["data"]["audit_report"]
+
+    assert result == 3
+    assert audit_report["expected_job_requirements_sha256"] == sha256_json(requirements)
+    assert any(
+        check["issue_code"] == "requirements_binding_mismatch" and not check["passed"]
+        for check in audit_report["checks"]
+    )
+    assert "Synthetic Company" not in captured.out
+    assert "Synthetic Company" not in captured.err
     assert captured.err == ""
 
 

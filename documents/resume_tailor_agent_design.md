@@ -324,15 +324,15 @@ storage/
 │                       │           ├── payload.json
 │                       │           ├── semantic_review.json # SemanticReview（4.4），绑定 payload_sha256
 │                       │           ├── audit_report.json # 记录实际执行的校验与跳过的检查
-│                       │           ├── generated.docx
-│                       │           ├── generated.md   # 选择 Markdown 或模板不可用时的候选
-│                       │           └── generated.pdf
+│                       │           ├── {company}-{role}-{YYYYMMDD-HHMMSS}.docx
+│                       │           ├── {company}-{role}-{YYYYMMDD-HHMMSS}.md
+│                       │           └── {company}-{role}-{YYYYMMDD-HHMMSS}.pdf
 │                       │
 │                       └── final/                 # 用户最终审批通过 (Approved) 的正式投递包
 │                           ├── v1/
-│                           │   ├── resume.docx
-│                           │   ├── resume.md
-│                           │   ├── resume.pdf
+│                           │   ├── {company}-{role}-{YYYYMMDD-HHMMSS}.docx
+│                           │   ├── {company}-{role}-{YYYYMMDD-HHMMSS}.md
+│                           │   ├── {company}-{role}-{YYYYMMDD-HHMMSS}.pdf
 │                           │   ├── cover_letter_v1.docx # [Phase 4]
 │                           │   ├── approval.json        # 用户批准记录与确认的豁免项（4.4）
 │                           │   └── manifest.json        # 文件哈希、版本号、生成参数与来源哈希；最后写入，作为发布完成标记
@@ -617,6 +617,7 @@ class RewrittenBullet(BaseModel):
     bullet_id: str  # 载荷内唯一且稳定；澄清与裁剪都引用它
     rewritten_text: str
     source_fact_ids: list[str] = Field(min_length=1, description="必须引用已确认的事实ID")
+    source_skill_ids: list[str] = Field(default_factory=list, description="可选的已确认技能补充来源")
     matched_jd_keywords: list[str]
     applied_style: Literal["conservative", "balanced", "assertive"]
     used_metric_ids: list[str] = Field(default_factory=list)
@@ -667,7 +668,7 @@ class TailoredResumePayload(BaseModel):
 
 **面试问题汇总契约（Phase 4）**：使用独立的 `InterviewQuestionSummaryRequest` 和 `InterviewQuestionSummaryPayload`，不把历史面试回答当作 FactBase 事实。请求提供 `scope: Literal["all", "by_title"]`，并可选指定 `role_titles`；`by_title` 按申请记录的 `target_jobs.role_title` 分组。汇总响应包含主题/重复问题、源问题 ID 及其公司、岗位、轮次和日期；每项历史问题总结必须能追溯到一个或多个用户记录的问题。模型生成的准备建议单独放入 `preparation_suggestions` 并明确标注，不得伪装成实际面试中被问过的问题。
 
-契约校验必须确保：payload 的 `snapshot_sha256` 与参与校验的快照一致；非空摘要有已确认的来源；摘要的每个 `FactReference` 根据类型和 ID 解析到同一快照，支持技能、教育及经历等来源；每个经历/项目中的事实和指标属于对应条目；`bullet_id` 在 payload 内唯一，`pending_confirmations` 的 `target_bullet_ids` 与各条目的 `open_placeholder_ids` 都能解析；`selected_skill_ids` 与 `selected_education_ids` 唯一且属于同一快照。空摘要或空教育列表表示不输出该部分。存在未解决占位符的 payload 在 `check-facts` 中报告为阻断（`render` 因此不生成文件），不得批准或发布。自由输入和预定义选项必须互斥或符合所选动作的必填字段（`provide_metric` 须带 `new_metric`，`confirm_skill` 须带 `confirmed_skill_name`，`select_items_to_trim` 须带 `selected_bullet_ids`）；服务端验证占位符、目标、选项、`question_version` 与 `idempotency_key`，不信任客户端提交的 ID，新指标与新技能的 ID 一律由服务端生成。`UserClarificationResponse` 只用于 API/工作台路线；Prompt 路线的澄清结果通过新的候选与确认记录经 `build-snapshot` 生成子快照（5.4）。
+契约校验必须确保：payload 的 `snapshot_sha256` 与参与校验的快照一致；非空摘要有已确认的来源；摘要的每个 `FactReference` 根据类型和 ID 解析到同一快照，支持技能、教育及经历等来源；每个经历/项目中的 `source_fact_ids` 属于对应条目，`source_skill_ids` 只引用已选且已确认的技能；`bullet_id` 在 payload 内唯一，`pending_confirmations` 的 `target_bullet_ids` 与各条目的 `open_placeholder_ids` 都能解析；`selected_skill_ids` 与 `selected_education_ids` 唯一且属于同一快照。空摘要或空教育列表表示不输出该部分。存在未解决占位符的 payload 在 `check-facts` 中报告为阻断（`render` 因此不生成文件），不得批准或发布。自由输入和预定义选项必须互斥或符合所选动作的必填字段（`provide_metric` 须带 `new_metric`，`confirm_skill` 须带 `confirmed_skill_name`，`select_items_to_trim` 须带 `selected_bullet_ids`）；服务端验证占位符、目标、选项、`question_version` 与 `idempotency_key`，不信任客户端提交的 ID，新指标与新技能的 ID 一律由服务端生成。`UserClarificationResponse` 只用于 API/工作台路线；Prompt 路线的澄清结果通过新的候选与确认记录经 `build-snapshot` 生成子快照（5.4）。
 
 ### 4.3 关系型数据库全量模型设计 (`db/models.py`)
 
@@ -1071,7 +1072,7 @@ Prompt 路线没有数据库，命令之间通过带版本号的 JSON/Markdown �
 | `DiagnosticRecord` | CLI 或宿主 Agent | 每个 workflow step 一个记录：`run_id`、`step`、`command`、`status`、`exit_code`、`created_at`、`issue_codes[]`、`artifacts[]`（角色与哈希）、`skipped_checks[]`、数值 `counts`；写入 `private_data/tmp/<run-id>/<step>.json`，不含文档、来源引文、Prompt、模型响应、凭据或用户原话。 |
 | `JobRequirements` | 宿主 Agent（API 路线为主模型） | `jd_text_sha256`（用户确认后的 JD 文本）、`company_name`、`role_title`（从所选 JD 提取，用户可更正）、`keywords[]`（词与类别：技能、职责、资质）、`must_have`、`nice_to_have`。JD 视为不可信数据，其中的指令不是字段。 |
 | `SemanticReview` | 宿主 Judge / 应用 Auditor | `payload_sha256`、`mode`、`status`、`judge_independence`（仅 `API_JUDGE`）、`context_isolated`、`reviewer_label`（宿主自报，不可验证）、`findings[]`（`target_id`、类别、依据的 `fact_id`、建议动作）；`payload_sha256` 不匹配的审查结果无效。 |
-| `AuditReport` | `check-facts`、`render` | 各级检查结果、`skipped_checks[]`、渲染与健康检查结果、`render_path`、按 5.5 汇总的审批条件。 |
+| `AuditReport` | `check-facts`、`render` | 各级检查结果、`skipped_checks[]`、渲染与健康检查结果、`render_path`、按 5.5 汇总的审批条件；提供 `expected_job_requirements_sha256`（传入要求时为规范化 `JobRequirements` 的哈希，否则为 null），供宿主绑定 payload。 |
 | `Approval` | 宿主 Agent（Prompt 路线生成候选完整性记录） | `candidate_files[]`（路径与 sha256）、`payload_sha256`、`snapshot_sha256`、`company_name`、`role_title`（与岗位元数据一致，来自 JD 提取或用户更正）、审查摘要、`acknowledged_waivers[]`（用户明确豁免项，5.5）、`approved_at`（记录时间）；基于用户对 `private_data/` 写入的长期授权生成，不表示用户已预览或逐次批准候选；是审计记录，不是身份认证。 |
 | `Manifest` | `publish` | 版本号 N、所有文件哈希、`snapshot_sha256`、`ledger_sha256`、`payload_sha256`、`job_requirements_sha256`、审查摘要（含是否豁免）、代码版本、`PROMPT.md` 哈希（Prompt 路线）、渲染器与字体版本、`render_path`；最后写入，作为发布完成标记。 |
 
@@ -1117,13 +1118,13 @@ Prompt 路线的 `section_coverage` 宿主步骤使用既有 `DiagnosticRecord.c
 ```
 
 ### 5.1 第一级：事实来源校验（代码级）
-* 遍历摘要的 `summary_sources` 和每条改写的 `source_fact_ids`，比对产物绑定的快照；每条经历/项目中的事实及指标必须属于该经历/项目。来源存在不等于能证明改写的语义。payload 的 `snapshot_sha256` 与参与校验的快照不一致时直接拒绝。
+* 遍历摘要的 `summary_sources` 和每条改写的 `source_fact_ids`，比对产物绑定的快照；每条经历/项目至少引用本区段的已确认事实，补充的 `source_skill_ids` 必须属于 `selected_skill_ids` 且已确认。指标必须属于该经历/项目。来源存在不等于能证明改写的语义。payload 的 `snapshot_sha256` 与参与校验的快照不一致时直接拒绝。
 * 只有用户确认的身份、教育、技能和履历事实才允许进入正式输出；含未确认主张或待澄清问题的内容不得批准或发布。`ProjectFact.description` 仅供人工核对，不是可引用来源，生成节点只可引用 `bullets`。
 * **确认状态的核验**：不只信任标志位。构建快照时按当前内容重算 `content_sha256` 并核对确认记录（4.3.2）；Prompt 路线还要求确认记录绑定用户可见的账本哈希（1.5 的信任边界）。`resume_extract` 来源的 `raw_source_text` 必须能在 `SourceText` 文本块中逐字找到（`validate-facts`）；`user_confirmation` 来源必须附带用户原话。
 
 ### 5.2 第二级：确定性硬校验（代码级）
 * **技能子集检查**：`payload.selected_skill_ids` 必须是快照 `verified_skills` 的 `skill_id` 子集（允许与全集相等，空集合也允许）；技能名称由渲染代码按 ID 取得，模型不提供技能名称。
-* **未支持术语检查**：主张词表 = JD 要求关键词（`JobRequirements.keywords`）∪ 随项目版本化的技术/证书术语表（`data/`）。摘要、正文和技能中出现的任一词表术语，必须能由以下之一支持：已确认技能的名称或已确认别名、所引用事实的 `tech_tags`、所引用事实的原文。这使“JD 要求 Go/K8s 而事实库只有 Python”的陷阱可以由代码确定性拦截。同义映射只能来自别名表或用户确认（`confirm_skill`），模型不得自行宣布两个技术等价；用户确认的别名保存在技能的 `aliases`。
+* **未支持术语检查**：主张词表 = JD 要求关键词（`JobRequirements.keywords`）∪ 随项目版本化的技术/证书术语表（`data/`）。摘要、正文和技能中出现的任一词表术语，必须能由以下之一支持：已确认技能的名称或已确认别名、所引用事实的 `tech_tags`、所引用事实的原文；正文可通过 `source_skill_ids` 显式引用已选且已确认的技能作为补充依据。同义映射只能来自别名表或用户确认（`confirm_skill`），模型不得自行宣布两个技术等价；用户确认的别名保存在技能的 `aliases`。
 * **实体落地检查**：雇主、客户、产品、院校、证书、学位、职称和日期等专有名词若出现在摘要或正文中，必须出现在所引用事实或快照的不可变字段中，否则报告为需确认项。该检查是启发式的、偏重召回：误报转化为向用户的提问，而不是静默放行；漏报由第三级与人工复核兜底。
 * **数字与指标闭环**：先遮蔽已知技术名称（如 S3、EC2、GPT-4、Python 3，取自已确认技能、别名和 `tech_tags`），再从摘要和每条正文识别度量实体并规范化后与所声明指标比对。规范化覆盖千分位、`k/M/B`、`万/亿`、`%`、货币符号、`x/倍`、区间以及中英文数字词；数值、单位、`qualifier` 与方向必须与声明指标一致，不得强化限定词（`approx` 不得写成精确值，没有 `at_least` 不得加“超过”“+”）。无法判定是技术名还是指标的含数字记号按需确认处理。指标的对象、变化方向和上下文还须语义审查或人工复核，不能因为数字相同就放行。未知数字、无法判定的单位或未解决的占位符均阻止批准。
 * **派生数字**：模型不得自行计算新数字（变化前后的百分比、年限、数量合计等）。这类数字只有经用户确认后才可使用：代码可根据已确认的指标或不可变日期给出“建议值”（如按已确认日期约 N 年），用户在确认账本中确认后成为 `VerifiedMetric`（`metric_type` 可为 `duration`）。在此之前一律视为未知数字并阻止。
@@ -1310,6 +1311,10 @@ LangGraph `interrupt()` 和 `Command(resume=...)` 仅用于应用 API/工作台�
 6. 宿主 Agent 会话可能没有持久化或跨版本兼容保证。不得把完整简历、JD、对话或宿主凭据写入日志。会话丢失时，已生成的资料档案、快照、候选与 manifest 仍保存在 `private_data/` 并可按其哈希继续，但应说明需要重新提供哪些信息，不假装恢复对话。
 
 #### 7.3.3 `PROMPT.md` 内容规范与版本化
+
+* **用户 gap 证据的润色与放置**：用户对可选 gap 问题的回答经验证后作为事实证据，而非成稿；按原简历的语气、时态和细节层级润色，保留事实范围、归属和指标限定。跨岗位的概括性优势可放摘要，雇主/项目特定的方法、行动和结果放入对应经历/项目；避免逐字复制、摘要堆叠和跨章节重复，不要求用户选择放置位置。若事实归属仍有实质歧义，只做最小必要澄清或省略不受支持的归属。
+* **最终问题清单**：最终报告（包括提前停止时）列出实际向用户提出的全部问题；批量问题只列一次，并标注回答、拒绝或未回答状态。不编造未提出的问题，也不把问题或答案写入 content-free 诊断记录。
+* **回归测试要求**：静态 Prompt 契约测试必须覆盖上述润色、放置和问题清单规则，并验证 gap 摘要、证据整理与 payload 起草的顺序。
 
 静态 Prompt 契约测试必须要求：profile 复用时读取与 `resume_source_sha256` 匹配的完整 `SourceText`；生成前盘点原章节、生成后逐节映射与比较词数；原始来源正文不少于 20 词的章节须保持 85%-115% 长度；缺项/越界在 `check-facts` 前阻断；同时禁止把 `check-facts` 或 Judge 当作来源完整性检查。
 

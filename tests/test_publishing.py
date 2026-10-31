@@ -31,6 +31,7 @@ def _create_candidate(
     review_status: str = "PASSED",
     waiver: AcknowledgedWaiver | None = None,
     approval_payload_sha256: str | None = None,
+    filename_stem: str = "generated",
 ) -> tuple[Path, Path]:
     candidate_dir = (
         root
@@ -42,8 +43,8 @@ def _create_candidate(
     payload_hash = sha256_json(payload)
     review_mode = "SELF_REVIEW" if review_status == "PASSED" else "NONE"
     files_content = {
-        "generated.docx": ("resume_docx", b"synthetic-docx"),
-        "generated.pdf": ("resume_pdf", b"synthetic-pdf"),
+        f"{filename_stem}.docx": ("resume_docx", b"synthetic-docx"),
+        f"{filename_stem}.pdf": ("resume_pdf", b"synthetic-pdf"),
         "payload.json": ("payload", payload.model_dump_json().encode("utf-8")),
     }
     if review_status == "PASSED":
@@ -130,6 +131,22 @@ def test_publish_reserves_version_and_retry_returns_same_version(
     assert manifest.version == 1
     assert (final_dir / "resume.docx").read_bytes() == b"synthetic-docx"
     assert (final_dir / "resume.pdf").read_bytes() == b"synthetic-pdf"
+
+
+def test_publish_preserves_timestamped_resume_filename(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    filename_stem = "synthetic-systems-engineer-20260101-120000"
+    candidate_dir, approval_path = _create_candidate(
+        tmp_path, filename_stem=filename_stem
+    )
+
+    result, exit_code = publish_candidate(candidate_dir, approval_path)
+    final_dir = Path(result.data["final_dir"])
+
+    assert exit_code == 0
+    assert (final_dir / f"{filename_stem}.docx").read_bytes() == b"synthetic-docx"
+    assert (final_dir / f"{filename_stem}.pdf").read_bytes() == b"synthetic-pdf"
+    assert not (final_dir / "resume.docx").exists()
 
 
 def test_publish_recovers_after_atomic_file_finalization_fails(

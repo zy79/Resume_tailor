@@ -12,6 +12,7 @@ from resume_tailor.contracts import (
     TailoredResumePayload,
     UserFactBase,
     VerifiedMetric,
+    VerifiedSkill,
     WorkExperienceFact,
     content_sha256,
     sha256_json,
@@ -94,6 +95,7 @@ def test_supported_payload_passes_deterministic_checks(tmp_path: Path) -> None:
 
     assert all(check.passed for check in report.checks)
     assert report.approval_conditions["deterministic_checks_passed"] is True
+    assert report.expected_job_requirements_sha256 is None
 
 
 def test_payload_must_bind_to_snapshot(tmp_path: Path) -> None:
@@ -135,6 +137,120 @@ def test_unsupported_jd_term_is_blocked(tmp_path: Path) -> None:
     )
 
 
+def test_experience_bullet_can_cite_selected_confirmed_skill(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    skill = VerifiedSkill(
+        skill_id="skill_shap",
+        skill_name="SHAP-based model explanation",
+        source_kind="user_confirmation",
+        raw_source_text="Used SHAP values to explain forecast outputs.",
+        user_confirmed=True,
+    )
+    skill = skill.model_copy(update={"content_sha256": content_sha256(skill)})
+    fact_base = snapshot.fact_base.model_copy(update={"verified_skills": [skill]})
+    snapshot = snapshot.model_copy(
+        update={
+            "fact_base": fact_base,
+            "snapshot_sha256": sha256_json(fact_base),
+        }
+    )
+    _write_json(tmp_path / "snapshot.json", snapshot)
+
+    requirements = JobRequirements(
+        jd_text_sha256="0" * 64,
+        company_name="Synthetic Systems",
+        role_title="Engineer",
+        keywords=[JobKeyword(term="SHAP", category="skill", must_have=True)],
+    )
+    payload = TailoredResumePayload(
+        snapshot_sha256=snapshot.snapshot_sha256,
+        job_requirements_sha256=sha256_json(requirements),
+        selected_skill_ids=["skill_shap"],
+        experiences=[
+            TailoredExperienceSection(
+                exp_id="exp_service",
+                selected_bullets=[
+                    RewrittenBullet(
+                        bullet_id="bullet_service",
+                        rewritten_text="Explained forecast outputs with SHAP values.",
+                        source_fact_ids=["fact_service"],
+                        source_skill_ids=["skill_shap"],
+                        applied_style="balanced",
+                    )
+                ],
+            )
+        ],
+    )
+    _write_json(tmp_path / "payload.json", payload)
+    _write_json(tmp_path / "requirements.json", requirements)
+
+    report = check_resume_facts(
+        tmp_path / "snapshot.json",
+        tmp_path / "payload.json",
+        requirements_path=tmp_path / "requirements.json",
+    )
+
+    assert all(check.passed for check in report.checks)
+
+
+def test_experience_bullet_cannot_use_an_uncited_selected_skill(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path / "snapshot.json")
+    skill = VerifiedSkill(
+        skill_id="skill_shap",
+        skill_name="SHAP-based model explanation",
+        source_kind="user_confirmation",
+        raw_source_text="Used SHAP values to explain forecast outputs.",
+        user_confirmed=True,
+    )
+    skill = skill.model_copy(update={"content_sha256": content_sha256(skill)})
+    fact_base = snapshot.fact_base.model_copy(update={"verified_skills": [skill]})
+    snapshot = snapshot.model_copy(
+        update={
+            "fact_base": fact_base,
+            "snapshot_sha256": sha256_json(fact_base),
+        }
+    )
+    _write_json(tmp_path / "snapshot.json", snapshot)
+
+    requirements = JobRequirements(
+        jd_text_sha256="0" * 64,
+        company_name="Synthetic Systems",
+        role_title="Engineer",
+        keywords=[JobKeyword(term="SHAP", category="skill", must_have=True)],
+    )
+    payload = TailoredResumePayload(
+        snapshot_sha256=snapshot.snapshot_sha256,
+        job_requirements_sha256=sha256_json(requirements),
+        selected_skill_ids=["skill_shap"],
+        experiences=[
+            TailoredExperienceSection(
+                exp_id="exp_service",
+                selected_bullets=[
+                    RewrittenBullet(
+                        bullet_id="bullet_service",
+                        rewritten_text="Explained forecast outputs with SHAP values.",
+                        source_fact_ids=["fact_service"],
+                        applied_style="balanced",
+                    )
+                ],
+            )
+        ],
+    )
+    _write_json(tmp_path / "payload.json", payload)
+    _write_json(tmp_path / "requirements.json", requirements)
+
+    report = check_resume_facts(
+        tmp_path / "snapshot.json",
+        tmp_path / "payload.json",
+        requirements_path=tmp_path / "requirements.json",
+    )
+
+    assert any(
+        check.issue_code == "unsupported_term" and not check.passed
+        for check in report.checks
+    )
+
+
 def test_uncovered_must_have_does_not_block_candidate(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path / "snapshot.json")
     payload = _payload(tmp_path / "payload.json", snapshot, "Built a reliable service.")
@@ -156,6 +272,7 @@ def test_uncovered_must_have_does_not_block_candidate(tmp_path: Path) -> None:
 
     assert all(check.passed for check in report.checks)
     assert report.approval_conditions["deterministic_checks_passed"] is True
+    assert report.expected_job_requirements_sha256 == sha256_json(requirements)
 
 
 def test_unsupported_derived_number_is_blocked(tmp_path: Path) -> None:

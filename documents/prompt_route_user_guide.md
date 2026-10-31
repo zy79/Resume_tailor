@@ -108,12 +108,12 @@ Resume_tailor/
 │                       │   ├── candidate.json
 │                       │   ├── payload.json
 │                       │   ├── audit_report.json
-│                       │   ├── generated.docx (or .md)
-│                       │   └── generated.pdf
+│                       │   ├── {company}-{role}-{YYYYMMDD-HHMMSS}.docx (or .md)
+│                       │   └── {company}-{role}-{YYYYMMDD-HHMMSS}.pdf
 │                       └── final/
 │                           └── v1/
-│                               ├── resume.docx (or .md)
-│                               ├── resume.pdf
+│                               ├── {company}-{role}-{YYYYMMDD-HHMMSS}.docx (or .md)
+│                               ├── {company}-{role}-{YYYYMMDD-HHMMSS}.pdf
 │                               ├── approval.json
 │                               └── manifest.json
 └── documents/                            # Tracked in Git: Only public docs & synthetic samples
@@ -142,7 +142,7 @@ The agent will:
 2. Before the first file-content read, disclose that the host may process document content and retain the conversation. In the current single-user local workflow, the repository's `private_data/` is the active user's workspace, so the assistant uses it for task-relevant discovery and reads without asking the user to select the folder or approve each file. A direct names-only request permits only that lookup; it does not authorize reading file contents, and the assistant reports filenames without asking a separate permission question.
 3. Check `private_data/profiles/` first. If no profile exists, automatically look in the same workspace for a resume and JD. If a profile exists, it supplies the resume facts and the assistant still looks in that workspace for the current JD; a profile does not contain a JD. Multiple profiles or candidate files require a choice of which input to use, not permission to read. You can instead provide exact file paths or pasted text. The assistant reads only task-relevant files before asking about tailoring preferences.
 4. The assistant extracts the company and job title from the JD and selects the output language from the source documents without asking you to restate those details. It uses their shared language, the JD's language if they differ, or the only identifiable source language; it uses English (`en`) only if neither language is clear.
-5. Ask about positioning style (`conservative`, `balanced`, or `assertive`) only after inspecting the inputs. The assistant can preserve the original layout only when the source resume is DOCX and is used as the render-template source (or as the basis for a validated custom template). PDF/TXT inputs require re-layout; if you explicitly require the original layout, provide the original DOCX. A PDF-to-DOCX conversion does not restore formatting. Otherwise, the assistant uses a suitable built-in or custom template and discloses that it is reconstructing the layout; source page count is a target when known, not a guarantee.
+5. Use `balanced` positioning by default and honor any style preference you volunteer; the assistant does not ask a separate optional style question. It can preserve the original layout only when the source resume is DOCX and is used as the render-template source (or as the basis for a validated custom template). PDF/TXT inputs require re-layout; if you explicitly require the original layout, provide the original DOCX. A PDF-to-DOCX conversion does not restore formatting. Otherwise, the assistant uses a suitable built-in or custom template and discloses that it is reconstructing the layout; source page count is a target when known, not a guarantee.
 
 For troubleshooting, each CLI command can write a content-free record with
 `--diagnostics-out private_data/tmp/<run-id>/<step>.json`. The host assistant saves the same
@@ -263,6 +263,12 @@ provide. The assistant asks at most one optional batch question for the whole li
 separate question per requirement. The user can address any subset or none; unanswered gaps are
 omitted and the workflow continues. Suggestions are not resume claims.
 
+After you provide evidence, the assistant validates it and polishes supported additions to match
+the resume's tone and level of detail instead of copying your answer verbatim. It chooses placement
+according to the evidence: broad strengths may fit the summary, while employer- or project-specific
+methods and examples belong under the corresponding experience or project. It does not put every
+addition in the summary or duplicate claims across sections.
+
 Before generating any document, the assistant runs `check-facts`:
 
 ```bash
@@ -272,6 +278,12 @@ resume-tailor check-facts \
   --requirements private_data/requirements.json \
   --diagnostics-out private_data/tmp/run_001/check-facts.json
 ```
+
+When requirements are supplied, `check-facts` reports the canonical hash of the parsed model as
+`data.audit_report.expected_job_requirements_sha256`. If it differs from
+`payload.job_requirements_sha256`, copy that value into a new payload file and rerun the full
+check; do not hash the raw requirements file or overwrite the earlier payload. Use
+`data.audit_report.payload_sha256` from the final check when binding the semantic review.
 
 **Deterministic Gates (Levels 1 & 2):**
 - **Snapshot Binding**: `payload.snapshot_sha256` must match the snapshot.
@@ -337,7 +349,8 @@ missing/unavailable review), the assistant creates `approval.json` from the exac
 and review metadata as an integrity record, then calls `publish` automatically. This record does not
 claim that you reviewed or individually approved the candidate. Missing-review waivers still
 require your explicit choice; failed checks or a failed Judge always block publication. The
-assistant reports the `confirmation_summary` and final artifact paths so you can inspect them:
+assistant reports the `confirmation_summary`, final artifact paths, and a `Questions asked` list
+covering every question actually asked in the run, including batched questions and any early stop:
 
 ```bash
 resume-tailor publish \
@@ -351,7 +364,7 @@ resume-tailor publish \
 - Enforces semantic review conditions: Blocks `FAILED` reviews; verifies user-authored waiver text for `NOT_RUN` or `UNAVAILABLE`.
 - Reserves the next version directory (`final/v1/`, `final/v2/`) using exclusive `os.mkdir` and writes `.reservation.json`.
 - Retries idempotently if the same candidate was already reserved or published.
-- Copies the final files (`resume.docx`, `resume.pdf`, `approval.json`).
+- Copies the timestamped resume files, `approval.json`, and other candidate artifacts.
 - Writes `manifest.json` **last** as the atomic completion marker (recording file hashes, code version, and `PROMPT.md` hash).
 
 ---

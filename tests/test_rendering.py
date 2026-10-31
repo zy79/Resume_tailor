@@ -1,4 +1,5 @@
 import io
+import re
 from pathlib import Path
 
 import pytest
@@ -203,7 +204,8 @@ def test_markdown_and_html_fallback_are_literal_and_degraded(
         output_format="markdown",
         run_id=None,
     )
-    markdown = (output_dir / "generated.md").read_text(encoding="utf-8")
+    markdown_path = next(output_dir.glob("resume-*.md"))
+    markdown = markdown_path.read_text(encoding="utf-8")
     assert r"Synthetic Systems \(Melbourne, Australia\)" in markdown
     html_content = markdown_html(
         {
@@ -227,7 +229,7 @@ def test_markdown_and_html_fallback_are_literal_and_degraded(
     assert exit_code == 4
     assert result.status == "degraded"
     assert result.data["pdf_generated"] is False
-    assert "generated.pdf" not in {Path(item.path).name for item in result.artifacts}
+    assert not any(item.role == "resume_pdf" for item in result.artifacts)
     assert r"\!\[x\]" in markdown
     assert "&lt;script&gt;" in markdown
     assert "<script>" not in html_content
@@ -237,15 +239,15 @@ def test_markdown_and_html_fallback_are_literal_and_degraded(
 
 def test_docx_render_degrades_without_libreoffice(monkeypatch, tmp_path: Path) -> None:
     snapshot_path, payload_path = _render_fixture(tmp_path, "Built a reliable service.")
-    output_dir = tmp_path / "candidate"
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("resume_tailor.rendering.shutil.which", lambda _: None)
 
     result, exit_code = render_resume(
         snapshot_path=snapshot_path,
         payload_path=payload_path,
-        company_name=None,
-        role_title=None,
-        out_dir=output_dir,
+        company_name="Synthetic.ai",
+        role_title="Senior Data Scientist",
+        out_dir=None,
         job_id=None,
         review_path=None,
         template_name="default",
@@ -255,8 +257,16 @@ def test_docx_render_degrades_without_libreoffice(monkeypatch, tmp_path: Path) -
 
     assert exit_code == 4
     assert result.status == "degraded"
-    assert (output_dir / "generated.docx").is_file()
-    assert not (output_dir / "generated.pdf").exists()
+    docx_files = [
+        Path(item.path) for item in result.artifacts if item.role == "resume_docx"
+    ]
+    assert len(docx_files) == 1
+    assert re.fullmatch(
+        r"synthetic-ai-senior-data-scientist-\d{8}-\d{6}\.docx",
+        docx_files[0].name,
+    )
+    assert docx_files[0].is_file()
+    assert not any(item.role == "resume_pdf" for item in result.artifacts)
 
 
 def test_render_blocks_before_creating_output_when_fact_gate_fails(

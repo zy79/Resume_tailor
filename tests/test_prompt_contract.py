@@ -7,7 +7,7 @@ def test_prompt_contains_phase_one_protocol_and_safety_contract() -> None:
     )
 
     required = (
-        "prompt_version: 12",
+        "prompt_version: 14",
         "extract-text",
         "validate-facts",
         "build-snapshot",
@@ -83,10 +83,32 @@ def test_prompt_contains_phase_one_protocol_and_safety_contract() -> None:
         "requirement",
         "they do not need to answer every row",
         "omit those requirements and continue without re-asking",
+        "At the end of every run, including an early stop, include a `Questions asked` section",
+        "Include batched questions once and note whether each was answered, declined, or left "
+        "unanswered",
+        "Use a concise, faithful paraphrase, write `None` if no question was asked",
+        "Treat evidence supplied in the optional gap response as evidence to validate and "
+        "incorporate, not finished resume prose.",
+        "Polish each supported addition into concise, natural wording consistent with the source "
+        "resume's tone, tense, and specificity",
+        "preserve the user's meaning, scope, attribution, and metric qualifiers",
+        "Do not paste the raw answer verbatim as resume copy, broaden the claim, or put every "
+        "addition in the summary.",
+        "broad, cross-role strengths may inform the summary",
+        "employer- or project-specific methods, actions, and outcomes belong under the matching "
+        "confirmed experience or project",
+        "Do not ask the user to choose placement",
+        "retain required same-section `source_fact_ids` and cite the selected, confirmed skill "
+        "with `source_skill_ids`",
+        "Include the `Questions asked` inventory required above in the final response",
         "process any new user-provided facts under the existing validation and confirmation rules",
         "Do not ask about optional style, tone, or positioning",
         "If model-generated wording is blocked for unsupported content",
         "then rerun the checks once",
+        "data.audit_report.expected_job_requirements_sha256",
+        "never hash the raw requirements file",
+        "copy the canonical hash into a new payload file",
+        "data.audit_report.payload_sha256",
         "Its fixed instructions must not fail a candidate solely because JD requirements are "
         "unsupported or omitted",
         "call `render` without pre-render approval",
@@ -200,6 +222,16 @@ def test_prompt_contains_phase_one_protocol_and_safety_contract() -> None:
     )
     assert prompt.index(
         "After the source snapshot is available and before drafting"
+    ) < prompt.index("Generate the tailored payload from confirmed facts only")
+    assert prompt.index(
+        "After the source snapshot is available and before drafting"
+    ) < prompt.index(
+        "Treat evidence supplied in the optional gap response as evidence to validate and "
+        "incorporate, not finished resume prose."
+    )
+    assert prompt.index(
+        "Treat evidence supplied in the optional gap response as evidence to validate and "
+        "incorporate, not finished resume prose."
     ) < prompt.index("Generate the tailored payload from confirmed facts only")
     assert prompt.index("retrieve its full extracted resume `SourceText`") < prompt.index(
         "Before drafting, treat the original extracted resume `SourceText` blocks"

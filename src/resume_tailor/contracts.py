@@ -316,6 +316,7 @@ class RewrittenBullet(Contract):
     bullet_id: str
     rewritten_text: str
     source_fact_ids: list[str] = Field(min_length=1)
+    source_skill_ids: list[str] = Field(default_factory=list)
     matched_jd_keywords: list[str] = Field(default_factory=list)
     applied_style: Literal["conservative", "balanced", "assertive"]
     used_metric_ids: list[str] = Field(default_factory=list)
@@ -389,6 +390,7 @@ class AuditReport(Contract):
     schema_version: Literal[1] = 1
     payload_sha256: Sha256
     snapshot_sha256: Sha256
+    expected_job_requirements_sha256: Sha256 | None = None
     checks: list[CheckResult] = Field(default_factory=list)
     skipped_checks: list[SkippedCheck] = Field(default_factory=list)
     render_path: str | None = None

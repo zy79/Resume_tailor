@@ -554,6 +554,19 @@ def _normal_label(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
+def _resume_filename_stem(
+    company_name: str | None,
+    role_title: str | None,
+    created_at: datetime,
+) -> str:
+    label = " ".join(value for value in (company_name, role_title) if value)
+    normalized = unicodedata.normalize("NFKD", label).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized.casefold()).strip("-") or "resume"
+    slug = slug[:180].rstrip("-") or "resume"
+    timestamp = created_at.astimezone().strftime("%Y%m%d-%H%M%S")
+    return f"{slug}-{timestamp}"
+
+
 def _company_slug(company_name: str) -> str:
     normalized = unicodedata.normalize("NFKD", company_name).encode("ascii", "ignore").decode()
     label = re.sub(r"[^a-z0-9]+", "-", normalized.casefold()).strip("-") or "company"
@@ -753,6 +766,9 @@ def render_resume(
     if out_dir is not None and Path(out_dir).expanduser().exists():
         raise ProtocolError("Output target already exists.", code="output_conflict")
 
+    created_at = datetime.now(UTC)
+    filename_stem = _resume_filename_stem(company_name, role_title, created_at)
+    docx_filename = f"{filename_stem}.docx"
     data = _resume_data(snapshot, payload)
     effective_format = (output_format or payload.run_config.render_format).casefold()
     if effective_format not in {"docx", "markdown"}:
@@ -765,7 +781,7 @@ def render_resume(
         template_content, template_id = _template_bytes(selected_template)
         try:
             docx_content = render_docx_template(template_content, _docx_context(data))
-            rendered_files.append(("generated.docx", "resume_docx", docx_content))
+            rendered_files.append((docx_filename, "resume_docx", docx_content))
         except ProtocolError as error:
             if error.code != "template_invalid" or template_id == "default":
                 raise
@@ -790,19 +806,19 @@ def render_resume(
     if effective_format == "markdown":
         markdown = markdown_document(data).encode("utf-8")
         html_content = markdown_html(data).encode("utf-8")
-        rendered_files.append(("generated.md", "resume_markdown", markdown))
-        pdf_source_name = "generated.html"
+        rendered_files.append((f"{filename_stem}.md", "resume_markdown", markdown))
+        pdf_source_name = f"{filename_stem}.html"
         pdf_source = html_content
         render_path_base = "markdown"
     else:
-        pdf_source_name = "generated.docx"
+        pdf_source_name = docx_filename
         pdf_source = rendered_files[0][2]
         render_path_base = "docx"
 
     pdf_content = _convert_to_pdf(pdf_source_name, pdf_source)
     pdf_health_passed = False
     if pdf_content is not None:
-        rendered_files.append(("generated.pdf", "resume_pdf", pdf_content))
+        rendered_files.append((f"{filename_stem}.pdf", "resume_pdf", pdf_content))
         health_checks = verify_pdf_health(pdf_content, data, payload.run_config.target_pages)
         report.checks.extend(health_checks)
         pdf_health_passed = all(check.passed for check in health_checks)
@@ -937,7 +953,7 @@ def render_resume(
         review_mode=review_mode,
         review_status=review_status,
         render_path=render_path,
-        created_at=datetime.now(UTC),
+        created_at=created_at,
     )
 
     created_paths: list[Path] = []

@@ -1,5 +1,5 @@
 ---
-prompt_version: 12
+prompt_version: 14
 ---
 
 # Resume Tailoring Session
@@ -33,6 +33,12 @@ for a new or changed resume, at most one optional batch response to the prioriti
 when real evidence could change the draft, or a required review-waiver decision. The user need not
 answer every gap; omit unanswered requirements and continue without re-asking. Do not pause for
 per-write or per-candidate publish approval.
+
+At the end of every run, including an early stop, include a `Questions asked` section listing every
+user-facing question actually asked during the run. Include batched questions once and note whether
+each was answered, declined, or left unanswered. Use a concise, faithful paraphrase, write `None` if
+no question was asked, and never invent an unasked question. This belongs in the user-facing report,
+not in a content-free diagnostic.
 
 For any future multi-user implementation, keep every user's personal data under a dedicated
 `private_data/users/<stable-user-id>/` directory, including profiles, source documents, snapshots,
@@ -238,8 +244,11 @@ exact file paths.
    to a suitable built-in or custom template and disclose that layout will be reconstructed. Use
    the source page count as a target when determinable, but do not promise exact pagination.
 
-   Use the host's native SHA-256 facility for `jd_text_sha256` and payload bindings when available.
-   If it is not available, stop rather than invent a hash.
+   Use the host's native SHA-256 facility for `jd_text_sha256` when available. For
+   `job_requirements_sha256`, use the canonical value reported by `check-facts` as
+   `data.audit_report.expected_job_requirements_sha256`; never hash the raw requirements file or
+   invent a value. Use `data.audit_report.payload_sha256` from the final check for review binding.
+   If a required CLI hash is missing, stop and report the protocol issue.
 4. Organize resume evidence into `FactCandidates`. Keep every `user_confirmed` value false. For
    every `resume_extract` fact, include the exact quoted source text and its `block_id`. Put
    unmodeled sections into `unparsed_sections`; do not silently discard them. If a quote spans
@@ -276,11 +285,23 @@ exact file paths.
    detail. Retain relevant responsibilities, methods/tools, scope, outcomes, and metric qualifiers.
    If needed source detail is absent from the confirmed snapshot, process it through the existing
    fact-validation and confirmation rules before use.
+   Treat evidence supplied in the optional gap response as evidence to validate and incorporate, not
+   finished resume prose. Polish each supported addition into concise, natural wording consistent
+   with the source resume's tone, tense, and specificity; preserve the user's meaning, scope,
+   attribution, and metric qualifiers. Do not paste the raw answer verbatim as resume copy, broaden
+   the claim, or put every addition in the summary. Choose placement from confirmed evidence: broad,
+   cross-role strengths may inform the summary; employer- or project-specific methods, actions, and
+   outcomes belong under the matching confirmed experience or project. Avoid duplicating a claim
+   across sections. Do not ask the user to choose placement; if a material attribution ambiguity
+   cannot be resolved from confirmed facts, omit the attribution or ask only the minimum question
+   needed to proceed.
    Generate the tailored payload from confirmed facts only. Preserve the chosen positioning style;
    STAR is an organizing pattern, not permission to invent missing context or results. Keep model
    suggestions separate from historical facts. Include source fact IDs, metric IDs, selected skill
    IDs, and unresolved placeholders accurately. A pending placeholder must not be hidden or
-   replaced with an invented value.
+   replaced with an invented value. For experience or project bullets using a gap-derived skill as
+   supplementary evidence, retain required same-section `source_fact_ids` and cite the selected,
+   confirmed skill with `source_skill_ids`; a skill citation never replaces section evidence.
 
    After drafting, compare each original section with its candidate section. Count
    whitespace-normalized words consistently, excluding section headings, employer/title names,
@@ -296,12 +317,18 @@ exact file paths.
    `section_coverage` `DiagnosticRecord` with numeric counts only; do not include section/employer
    names, resume text, excerpts, prompts, or paths. A passing `check-facts` result or Judge review
    is not a source-completeness check.
-8. Run `check-facts`. If model-generated wording is blocked for unsupported content, remove or
-   rewrite it using confirmed facts only, then rerun the checks once. Use only evidence supplied in
-   the single gap-summary response; do not ask another requirement-specific question here. Omit
-   gaps the user did not address and process any new user-provided facts under the existing
-   validation and confirmation rules. Never edit a source fact or confirmation ledger to pass. If
-   still blocked, report the remaining issue codes and stop.
+8. Run `check-facts`. Include `--requirements` when a structured requirements file is available.
+   Read `data.audit_report.expected_job_requirements_sha256`; if it differs from
+   `payload.job_requirements_sha256`, copy the canonical hash into a new payload file and rerun the
+   full check. Do not overwrite the earlier payload or hash the raw requirements file. The first
+   result may be blocked and is only for obtaining the binding hash, never a passing gate; the final
+   report must pass. If no requirements file was supplied, the expected hash is null and no
+   requirements binding is needed. If model-generated wording is blocked for unsupported content,
+   remove or rewrite it using confirmed facts only, then rerun the checks once. Use only evidence
+   supplied in the single gap-summary response; do not ask another requirement-specific question
+   here. Omit gaps the user did not address and process any new user-provided facts under the
+   existing validation and confirmation rules. Never edit a source fact or confirmation ledger to
+   pass. If still blocked, report the remaining issue codes and stop.
 9. Run a semantic Judge in a fresh host context when supported. Give it only the confirmed snapshot,
    candidate payload, structured job requirements, and fixed review instructions; do not give it the
    raw job-description text or generation conversation. Record `SELF_REVIEW` or
@@ -320,7 +347,8 @@ exact file paths.
    `confirmation_summary`, `render_path`, `skipped_checks`, and actual artifact paths. Report how
    each item in the prioritized gap summary was handled (supported by supplied evidence or
    omitted), without repeating the suggestions or asking again. Continue without waiting for
-   preview or publish approval.
+   preview or publish approval. Include the `Questions asked` inventory required above in the final
+   response, including when the workflow stops before rendering or publishing.
 11. If deterministic and render-health checks pass and the review is `PASSED` or has a valid
    user-provided waiver, create a unique `Approval` record with `schema_version: 1`,
    `candidate_files` copied from the candidate's path/role/hash records, `payload_sha256`,

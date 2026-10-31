@@ -4,8 +4,15 @@ Notable project changes are recorded here, with the newest entries first.
 
 ## Unreleased
 
+### Changed
+
+- Polish validated user-supplied JD-gap evidence to match resume voice and fit its evidence-based section; include all questions asked in the final report.
+- Allow rewritten experience and project bullets to cite selected, confirmed skills as supplementary evidence.
+- Name rendered and published resume files with a normalized company/role slug and local timestamp.
+
 ### Fixed
 
+- Expose the canonical `JobRequirements` hash from `check-facts` so Prompt hosts can bind payloads without hashing raw JSON bytes.
 - Include stored work-history locations in rendered experience headings.
 - Require a source-content section inventory and word-count gate so condensed profile facts cannot silently shorten or drop resume content; allow bullet restructuring and keep new gap evidence separate from source coverage.
 - List all uncovered JD requirements in one priority-ordered supplement-or-skip summary, with at most one optional evidence question and no per-requirement follow-ups.

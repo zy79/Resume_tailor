@@ -6,6 +6,8 @@ Notable project changes are recorded here, with the newest entries first.
 
 ### Fixed
 
+- Include stored work-history locations in rendered experience headings.
+- Require a source-content section inventory and word-count gate so condensed profile facts cannot silently shorten or drop resume content; allow bullet restructuring and keep new gap evidence separate from source coverage.
 - List all uncovered JD requirements in one priority-ordered supplement-or-skip summary, with at most one optional evidence question and no per-requirement follow-ups.
 - Publish Prompt-route candidates automatically after required checks, without per-write or final publish approval prompts; preserve explicit review-waiver and factuality gates.
 - Streamline Prompt-route interaction by defaulting optional preferences and reporting generated `private_data/` paths without approval prompts.

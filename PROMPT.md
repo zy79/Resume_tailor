@@ -1,5 +1,5 @@
 ---
-prompt_version: 11
+prompt_version: 12
 ---
 
 # Resume Tailoring Session
@@ -264,11 +264,38 @@ exact file paths.
    `private_data/profiles/<username>/`. Without profile storage, use `--out <path>`. Use
    `--identity` only for the exact local identity path the user approved; never inspect that file.
    Keep prior snapshots unchanged.
-7. Generate the tailored payload from confirmed facts only. Preserve the chosen positioning style;
+7. If using a saved profile, retrieve its full extracted resume `SourceText` from
+   `private_data/fact_base/sources/<resume_source_sha256>.json` using the hash in the snapshot. If
+   that source is missing, stop and ask for its exact path; do not draft from concise profile
+   statements alone. Before drafting, treat the original extracted resume `SourceText` blocks as
+   the authoritative completeness baseline. Inventory every original section and its source
+   content units (bullets, paragraphs, or sentences), linked to source block IDs. Preserve every
+   original section. Map content by meaning, not layout: split, combine, reorder, or use prose as
+   appropriate; no one-to-one mapping or equal bullet count is required. Account for each source
+   unit as retained/rephrased or intentionally omitted for tailoring; do not silently omit relevant
+   detail. Retain relevant responsibilities, methods/tools, scope, outcomes, and metric qualifiers.
+   If needed source detail is absent from the confirmed snapshot, process it through the existing
+   fact-validation and confirmation rules before use.
+   Generate the tailored payload from confirmed facts only. Preserve the chosen positioning style;
    STAR is an organizing pattern, not permission to invent missing context or results. Keep model
    suggestions separate from historical facts. Include source fact IDs, metric IDs, selected skill
    IDs, and unresolved placeholders accurately. A pending placeholder must not be hidden or
    replaced with an invented value.
+
+   After drafting, compare each original section with its candidate section. Count
+   whitespace-normalized words consistently, excluding section headings, employer/title names,
+   and date lines. Compare source-derived output words separately from new user-supplied gap
+   evidence; gap additions cannot compensate for omitted source content. Exclude source content
+   only when the user explicitly requested its removal. For every remaining source section with at
+   least 20 words, target the source length and keep retained source-derived output between 85% and
+   115% of that baseline. For shorter sections, check item-level coverage instead of a percentage.
+   A different bullet count or prose formatting is not a failure. Any unmapped section,
+   unaccounted source content unit, or section outside the range fails this gate: revise and repeat
+   the comparison. If it cannot pass without unsupported claims or silent omissions, stop before
+   `check-facts` and report the affected section and counts. Record a content-free
+   `section_coverage` `DiagnosticRecord` with numeric counts only; do not include section/employer
+   names, resume text, excerpts, prompts, or paths. A passing `check-facts` result or Judge review
+   is not a source-completeness check.
 8. Run `check-facts`. If model-generated wording is blocked for unsupported content, remove or
    rewrite it using confirmed facts only, then rerun the checks once. Use only evidence supplied in
    the single gap-summary response; do not ask another requirement-specific question here. Omit

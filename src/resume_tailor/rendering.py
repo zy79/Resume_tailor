@@ -228,7 +228,11 @@ def _resume_data(
         if fact is not None:
             experience_sections.append(
                 {
-                    "company": fact.company_name,
+                    "company": (
+                        f"{fact.company_name} ({fact.location})"
+                        if fact.location
+                        else fact.company_name
+                    ),
                     "role": fact.role_title,
                     "dates": f"{fact.start_date} - {fact.end_date}",
                     "bullets": [bullet.rewritten_text for bullet in section.selected_bullets],

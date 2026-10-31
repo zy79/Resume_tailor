@@ -124,7 +124,9 @@ def test_docx_templates_render_only_allowlisted_jinja_filters() -> None:
     )
 
 
-def _render_fixture(directory: Path, statement: str) -> tuple[Path, Path]:
+def _render_fixture(
+    directory: Path, statement: str, location: str | None = None
+) -> tuple[Path, Path]:
     bullet = EvidenceBullet(
         fact_id="fact_service",
         raw_source_text=statement,
@@ -138,6 +140,7 @@ def _render_fixture(directory: Path, statement: str) -> tuple[Path, Path]:
         exp_id="exp_service",
         company_name="Synthetic Systems",
         role_title="Engineer",
+        location=location,
         start_date="2020",
         end_date="2022",
         bullets=[bullet],
@@ -182,7 +185,9 @@ def test_markdown_and_html_fallback_are_literal_and_degraded(
     monkeypatch, tmp_path: Path
 ) -> None:
     statement = 'Built **reliable** service. ![x](http://example.test) <script>alert(1)</script>'
-    snapshot_path, payload_path = _render_fixture(tmp_path, statement)
+    snapshot_path, payload_path = _render_fixture(
+        tmp_path, statement, location="Melbourne, Australia"
+    )
     output_dir = tmp_path / "candidate"
     monkeypatch.setattr("resume_tailor.rendering.shutil.which", lambda _: None)
 
@@ -199,6 +204,7 @@ def test_markdown_and_html_fallback_are_literal_and_degraded(
         run_id=None,
     )
     markdown = (output_dir / "generated.md").read_text(encoding="utf-8")
+    assert r"Synthetic Systems \(Melbourne, Australia\)" in markdown
     html_content = markdown_html(
         {
             "name": "",

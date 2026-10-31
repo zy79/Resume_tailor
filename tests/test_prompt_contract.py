@@ -7,7 +7,7 @@ def test_prompt_contains_phase_one_protocol_and_safety_contract() -> None:
     )
 
     required = (
-        "prompt_version: 11",
+        "prompt_version: 12",
         "extract-text",
         "validate-facts",
         "build-snapshot",
@@ -138,12 +138,36 @@ def test_prompt_contains_phase_one_protocol_and_safety_contract() -> None:
         "the active user's files.",
         "If a valid profile supplies the resume, do not ask the user to paste or select the same "
         "resume again.",
+        "retrieve its full extracted resume `SourceText` from "
+        "`private_data/fact_base/sources/<resume_source_sha256>.json`",
+        "If that source is missing, stop and ask for its exact path; do not draft from concise "
+        "profile statements alone.",
         "If the resume source hash matches the saved profile, reuse the existing snapshot "
         "without re-confirming or rebuilding it.",
         "one source-level choice to use the parsed profile",
         "A clear selection is final; do not follow it with a second typed `confirm`.",
         "Treat user-provided resume claims as source facts without per-item high-risk "
         "confirmation.",
+        "Before drafting, treat the original extracted resume `SourceText` blocks as the "
+        "authoritative completeness baseline.",
+        "Inventory every original section and its source content units (bullets, paragraphs, or "
+        "sentences), linked to source block IDs.",
+        "Map content by meaning, not layout: split, combine, reorder, or use prose as "
+        "appropriate; no one-to-one mapping or equal bullet count is required.",
+        "Account for each source unit as retained/rephrased or intentionally omitted for "
+        "tailoring",
+        "After drafting, compare each original section with its candidate section.",
+        "Compare source-derived output words separately from new user-supplied gap evidence",
+        "gap additions cannot compensate for omitted source content",
+        "Exclude source content only when the user explicitly requested its removal.",
+        "between 85% and 115% of that baseline",
+        "For shorter sections, check item-level coverage instead of a percentage.",
+        "A different bullet count or prose formatting is not a failure.",
+        "Any unmapped section, unaccounted source content unit, or section outside the range "
+        "fails this gate",
+        "stop before `check-facts` and report the affected section and counts.",
+        "Record a content-free `section_coverage` `DiagnosticRecord` with numeric counts only",
+        "A passing `check-facts` result or Judge review is not a source-completeness check.",
         "For troubleshooting, keep one metadata-only record for every workflow step",
         "discovery_incomplete",
         "resume_not_found",
@@ -177,6 +201,18 @@ def test_prompt_contains_phase_one_protocol_and_safety_contract() -> None:
     assert prompt.index(
         "After the source snapshot is available and before drafting"
     ) < prompt.index("Generate the tailored payload from confirmed facts only")
+    assert prompt.index("retrieve its full extracted resume `SourceText`") < prompt.index(
+        "Before drafting, treat the original extracted resume `SourceText` blocks"
+    )
+    assert prompt.index(
+        "Before drafting, treat the original extracted resume `SourceText` blocks"
+    ) < prompt.index("Generate the tailored payload from confirmed facts only")
+    assert prompt.index("After drafting, compare each original section") < prompt.index(
+        "Run `check-facts`."
+    )
+    assert prompt.index("Record a content-free `section_coverage`") < prompt.index(
+        "Run `check-facts`."
+    )
     assert "Never scan directories" not in prompt
     assert "default to preserving the existing resume unless" not in prompt
     assert "only after the user approves that write" not in prompt
